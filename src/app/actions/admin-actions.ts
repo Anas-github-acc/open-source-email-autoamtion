@@ -38,9 +38,14 @@ export async function ensurePublicUser(userId: string) {
 export type CreateTemplateInput = {
   name: string;
   subject: string;
-  bodyHtml: string;
+  bodyHtml?: string;
   bodyText: string;
-  variables: string[];
+  variables?: string[];
+  attachmentName?: string | null;
+  attachmentPath?: string | null;
+  attachmentSize?: number | null;
+  attachmentMimeType?: string | null;
+  attachmentUrl?: string | null;
 };
 
 export type CreateLeadInput = {
@@ -307,9 +312,14 @@ export async function createTemplate<T>(userId: string, input: CreateTemplateInp
       user_id: userId,
       name: input.name,
       subject: input.subject,
-      body_html: input.bodyHtml,
+      body_html: input.bodyHtml || null,
       body_text: input.bodyText,
-      variables: input.variables,
+      variables: input.variables || null,
+      attachment_name: input.attachmentName || null,
+      attachment_path: input.attachmentPath || null,
+      attachment_size: input.attachmentSize || null,
+      attachment_mime_type: input.attachmentMimeType || null,
+      attachment_url: input.attachmentUrl || null,
     })
     .select("*")
     .single();
@@ -317,6 +327,163 @@ export async function createTemplate<T>(userId: string, input: CreateTemplateInp
   if (error) throw error;
   return data as T;
 }
+
+export async function updateTemplate<T>(
+  userId: string,
+  templateId: string,
+  input: {
+    name: string;
+    subject: string;
+    bodyText: string;
+    attachmentName?: string | null;
+    attachmentPath?: string | null;
+    attachmentSize?: number | null;
+    attachmentMimeType?: string | null;
+    attachmentUrl?: string | null;
+  }
+) {
+  const supabase = createServerSupabase();
+  await ensurePublicUserForClient(supabase, userId);
+
+  const { data, error } = await supabase
+    .from("email_templates")
+    .update({
+      name: input.name,
+      subject: input.subject,
+      body_text: input.bodyText,
+      body_html: null,
+      variables: null,
+      attachment_name: input.attachmentName ?? null,
+      attachment_path: input.attachmentPath ?? null,
+      attachment_size: input.attachmentSize ?? null,
+      attachment_mime_type: input.attachmentMimeType ?? null,
+      attachment_url: input.attachmentUrl ?? null,
+    })
+    .eq("id", templateId)
+    .eq("user_id", userId)
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return data as T;
+}
+
+// ─── PDF Attachment Library ──────────────────────────────────────────────────
+
+const MAX_TOTAL_STORAGE = 100 * 1024 * 1024; // 100 MB per user
+const MAX_FILE_SIZE = 10 * 1024 * 1024;       // 10 MB per file
+
+export async function fetchUserAttachments<T>(userId: string) {
+  const supabase = createServerSupabase();
+  const { data, error } = await supabase
+    .from("template_attachments")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as T[];
+}
+
+export async function getUserStorageUsed(userId: string): Promise<number> {
+  const supabase = createServerSupabase();
+  const { data, error } = await supabase
+    .from("template_attachments")
+    .select("size")
+    .eq("user_id", userId);
+  if (error) throw error;
+  return (data ?? []).reduce((sum, row) => sum + ((row as { size: number }).size ?? 0), 0);
+}
+
+export async function uploadAndRegisterAttachment(formData: FormData) {
+  const file = formData.get("file") as File;
+  const userId = formData.get("userId") as string;
+
+  if (!file || !userId) throw new Error("Missing file or userId");
+  if (file.type !== "application/pdf") throw new Error("Only PDF files are allowed");
+  if (file.size > MAX_FILE_SIZE) throw new Error("File exceeds the 10 MB limit");
+
+  // Enforce 100 MB per-user quota
+  const used = await getUserStorageUsed(userId);
+  const remaining = MAX_TOTAL_STORAGE - used;
+  if (file.size > remaining) {
+    const remainMB = (remaining / (1024 * 1024)).toFixed(1);
+    throw new Error(`Storage limit reached. You have ${remainMB} MB remaining.`);
+  }
+
+  const supabase = createServerSupabase();
+  const timestamp = Date.now();
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const storagePath = `${userId}/${timestamp}-${safeName}`;
+
+  const arrayBuffer = await file.arrayBuffer();
+  const fileBuffer = Buffer.from(arrayBuffer);
+
+  const { error: uploadError } = await supabase.storage
+    .from("template-attachments")
+    .upload(storagePath, fileBuffer, { contentType: file.type, upsert: false });
+
+  if (uploadError) throw uploadError;
+
+  // 1-year signed URL
+  const { data: urlData, error: urlError } = await supabase.storage
+    .from("template-attachments")
+    .createSignedUrl(storagePath, 60 * 60 * 24 * 365);
+
+  if (urlError) throw urlError;
+
+  // Register in library table
+  const { data, error: insertError } = await supabase
+    .from("template_attachments")
+    .insert({
+      user_id: userId,
+      name: file.name,
+      path: storagePath,
+      size: file.size,
+      mime_type: file.type,
+      url: urlData.signedUrl,
+    })
+    .select("*")
+    .single();
+
+  if (insertError) throw insertError;
+  return data;
+}
+
+export async function deleteAttachmentRecord(
+  userId: string,
+  attachmentId: string,
+  attachmentPath: string,
+) {
+  const supabase = createServerSupabase();
+  await ensurePublicUserForClient(supabase, userId);
+
+  // Remove from storage (non-fatal if already gone)
+  await supabase.storage.from("template-attachments").remove([attachmentPath]);
+
+  const { error } = await supabase
+    .from("template_attachments")
+    .delete()
+    .eq("id", attachmentId)
+    .eq("user_id", userId);
+
+  if (error) throw error;
+  return true;
+}
+
+export async function deleteTemplate(userId: string, templateId: string) {
+  const supabase = createServerSupabase();
+  await ensurePublicUserForClient(supabase, userId);
+
+  const { error } = await supabase
+    .from("email_templates")
+    .delete()
+    .eq("id", templateId)
+    .eq("user_id", userId);
+
+  if (error) throw error;
+  return true;
+}
+
 
 export async function createLead<T>(input: CreateLeadInput) {
   const supabase = createServerSupabase();
@@ -468,4 +635,167 @@ export async function updateCampaignRuntimeConfig<T>(campaignId: string, input: 
 
   if (error) throw error;
   return data as T;
+}
+
+export async function updateLead<T>(id: string, input: CreateLeadInput) {
+  const supabase = createServerSupabase();
+  const { data, error } = await supabase
+    .from("leads")
+    .update({
+      name: input.name,
+      email: input.email,
+      company: input.company || null,
+      role: input.role || null,
+      source: input.source || "private",
+      status: input.status || "new",
+    })
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return data as T;
+}
+
+export async function deleteLead(id: string) {
+  const supabase = createServerSupabase();
+  const { error } = await supabase.from("leads").delete().eq("id", id);
+  if (error) throw error;
+  return true;
+}
+
+export async function updateSenderAccount<T>(
+  userId: string,
+  id: string,
+  input: {
+    email: string;
+    displayName?: string;
+    smtpHost: string;
+    smtpPort: number;
+    smtpSecure: boolean;
+    smtpUserEmail?: string;
+    smtpPassword?: string;
+  }
+) {
+  const supabase = createServerSupabase();
+  await ensurePublicUserForClient(supabase, userId);
+
+  const updates: any = {
+    email: input.email,
+    display_name: input.displayName || null,
+    smtp_host: input.smtpHost,
+    smtp_port: input.smtpPort,
+    smtp_secure: input.smtpSecure,
+    smtp_user_email: input.smtpUserEmail || input.email,
+  };
+
+  if (input.smtpPassword) {
+    updates.encrypted_smtp_password = encryptSmtpPassword(input.smtpPassword);
+  }
+
+  const { data, error } = await supabase
+    .from("sender_accounts")
+    .update(updates)
+    .eq("id", id)
+    .eq("user_id", userId)
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return data as T;
+}
+
+export async function deleteSenderAccount(userId: string, id: string) {
+  const supabase = createServerSupabase();
+  await ensurePublicUserForClient(supabase, userId);
+  const { error } = await supabase
+    .from("sender_accounts")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  return true;
+}
+
+export async function updateCampaign<T>(
+  userId: string,
+  id: string,
+  input: {
+    name: string;
+    status: string;
+    senderAccountId: string;
+    templateId: string;
+    leadIds?: string[];
+  }
+) {
+  const supabase = createServerSupabase();
+  await ensurePublicUserForClient(supabase, userId);
+
+  const { data, error } = await supabase
+    .from("campaigns")
+    .update({
+      name: input.name,
+      status: input.status,
+      sender_account_id: input.senderAccountId,
+      template_id: input.templateId,
+    })
+    .eq("id", id)
+    .eq("user_id", userId)
+    .select("*")
+    .single();
+
+  if (error) throw error;
+
+  // Also update step 1 in sequences for simplicity (assuming campaign only has 1 or 2 steps and we edit the first one)
+  await supabase
+    .from("campaign_sequences")
+    .update({ template_id: input.templateId })
+    .eq("campaign_id", id)
+    .eq("step_number", 1);
+
+  if (input.leadIds) {
+    const { data: existingLeads } = await supabase
+      .from("campaign_leads")
+      .select("lead_id")
+      .eq("campaign_id", id);
+      
+    const existingLeadIds = (existingLeads || []).map((l) => l.lead_id);
+    const toRemove = existingLeadIds.filter((l) => !input.leadIds!.includes(l));
+    const toAdd = input.leadIds.filter((l) => !existingLeadIds.includes(l));
+    
+    if (toRemove.length > 0) {
+      await supabase
+        .from("campaign_leads")
+        .delete()
+        .eq("campaign_id", id)
+        .in("lead_id", toRemove);
+    }
+    
+    if (toAdd.length > 0) {
+      const now = new Date().toISOString();
+      await supabase.from("campaign_leads").insert(
+        toAdd.map((leadId) => ({
+          campaign_id: id,
+          lead_id: leadId,
+          current_step: 0,
+          next_send_at: now,
+          status: "pending",
+        }))
+      );
+    }
+  }
+
+  return data as T;
+}
+
+export async function deleteCampaign(userId: string, id: string) {
+  const supabase = createServerSupabase();
+  await ensurePublicUserForClient(supabase, userId);
+  const { error } = await supabase
+    .from("campaigns")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  return true;
 }

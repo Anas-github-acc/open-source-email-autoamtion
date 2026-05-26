@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
+import Link from "next/link"
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -45,7 +46,7 @@ export default function Settings() {
 
   return (
     <AppLayout>
-      <div className="max-w-3xl mx-auto p-6 md:p-8">
+      <div className="max-w-6xl mx-auto p-6 md:p-8">
         <div className="mb-8">
           <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
           <p className="text-[13px] text-muted-foreground mt-1">Manage your profile and GitHub connection.</p>
@@ -74,10 +75,10 @@ export default function Settings() {
         {/* GitHub */}
         <section className="rounded-md border border-border bg-card p-6">
           <h2 className="text-[14px] font-semibold mb-1 flex items-center gap-2">
-            <Github className="h-4 w-4" /> GitHub connection
+            <Github className="h-4 w-4" /> GitHub connection (Tutorial)
           </h2>
           <p className="text-[12px] text-muted-foreground mb-5">
-            Connect GitHub to fork the Postfork engine into your account and then add the repository secrets to Actions.
+            Connect GitHub to fork the DUmpmail script into your account and then add the repository secrets to Actions.
           </p>
           <Alert className="mb-5 border-border bg-secondary/20">
             <Github className="h-4 w-4" />
@@ -86,7 +87,8 @@ export default function Settings() {
               <div className="mt-2 space-y-4 text-[12px] text-muted-foreground">
                 <div className="rounded-md border border-border bg-background p-3">
                   <div className="text-[11px] uppercase tracking-wider">Repository</div>
-                  <div className="mt-1 break-all font-mono text-[12px] text-foreground">git@github.com:Anas-github-acc/Dumpmail.git</div>
+                  <div className="mt-1 break-all font-mono text-[12px] text-foreground">
+                    <Link href="https://github.com/Anas-github-acc/Dumpmail.git">https://github.com/Anas-github-acc/Dumpmail.git</Link></div>
                 </div>
 
                 <div className="grid gap-3 md:grid-cols-2">

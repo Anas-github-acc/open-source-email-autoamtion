@@ -259,6 +259,11 @@ export type Database = {
       }
       email_templates: {
         Row: {
+          attachment_mime_type: string | null
+          attachment_name: string | null
+          attachment_path: string | null
+          attachment_size: number | null
+          attachment_url: string | null
           body_html: string | null
           body_text: string | null
           created_at: string
@@ -269,6 +274,11 @@ export type Database = {
           variables: Json | null
         }
         Insert: {
+          attachment_mime_type?: string | null
+          attachment_name?: string | null
+          attachment_path?: string | null
+          attachment_size?: number | null
+          attachment_url?: string | null
           body_html?: string | null
           body_text?: string | null
           created_at?: string
@@ -279,6 +289,11 @@ export type Database = {
           variables?: Json | null
         }
         Update: {
+          attachment_mime_type?: string | null
+          attachment_name?: string | null
+          attachment_path?: string | null
+          attachment_size?: number | null
+          attachment_url?: string | null
           body_html?: string | null
           body_text?: string | null
           created_at?: string
@@ -287,6 +302,39 @@ export type Database = {
           subject?: string
           user_id?: string
           variables?: Json | null
+        }
+        Relationships: []
+      }
+      template_attachments: {
+        Row: {
+          created_at: string
+          id: string
+          mime_type: string
+          name: string
+          path: string
+          size: number
+          url: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          mime_type?: string
+          name: string
+          path: string
+          size?: number
+          url?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          mime_type?: string
+          name?: string
+          path?: string
+          size?: number
+          url?: string | null
+          user_id?: string
         }
         Relationships: []
       }

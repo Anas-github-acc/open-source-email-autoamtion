@@ -32,6 +32,8 @@ export async function loginWithGitHub() {
     provider: "github",
     options: {
       redirectTo,
+      // repo scope is required to: fork repositories + read/write Actions secrets
+      scopes: "repo",
     },
   });
 
