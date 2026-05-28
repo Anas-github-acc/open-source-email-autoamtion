@@ -23,10 +23,16 @@ function getDisplayName(user: User) {
   );
 }
 
-export async function loginWithGitHub() {
+export async function loginWithGitHub(origin?: string ) {
   const supabase = createServerSupabase();
 
-  const redirectTo = `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/auth/callback`;
+  const baseUrl = origin ?? process.env.NEXT_PUBLIC_NEXT_URL;
+
+  if (!baseUrl) {
+    throw new Error("Missing NEXT_PUBLIC_NEXT_URL");
+  }
+
+  const redirectTo = new URL("/auth/callback", baseUrl).href;
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "github",

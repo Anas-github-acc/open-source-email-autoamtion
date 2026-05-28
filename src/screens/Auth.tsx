@@ -37,7 +37,9 @@ export default function Auth() {
   const handleGitHubSignIn = async () => {
     setIsGitHubLoading(true);
     try {
-      const url = await loginWithGitHub();
+      const origin = typeof window !== "undefined" ? window.location.origin : undefined;
+      const url = await loginWithGitHub(origin);
+
       if (url) window.location.assign(url);
     } catch (error: unknown) {
       toast({ title: "GitHub sign-in failed", description: getErrorMessage(error), variant: "destructive" });
