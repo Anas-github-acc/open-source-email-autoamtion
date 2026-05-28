@@ -73,7 +73,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         // User was deleted or session was revoked server-side — kick them out.
-        if (event === "SIGNED_OUT" || event === "USER_DELETED") {
+        if (event === "SIGNED_OUT") {
           clearAuthState();
           setLoading(false);
           window.location.replace("/");
