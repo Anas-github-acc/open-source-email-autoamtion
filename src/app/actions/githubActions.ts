@@ -236,7 +236,7 @@ export async function forkAndConfigureRepo(
 
     // 5. Encrypt all three secrets
     const secrets: Record<string, string> = {
-      SUPABASE_USER_ID: supabaseUserId,
+      USER_ID: supabaseUserId,
       SUPABASE_URL: SUPABASE_URL,
       SUPABASE_PUBLISHABLE_KEY: SUPABASE_PUBLISHABLE_KEY,
     };
@@ -295,7 +295,7 @@ export async function injectSecretsStep(
     const { key_id, key } = await getRepoPublicKey(githubToken, login);
 
     const secrets: Record<string, string> = {
-      SUPABASE_USER_ID: supabaseUserId,
+      USER_ID: supabaseUserId,
       SUPABASE_URL: SUPABASE_URL,
       SUPABASE_PUBLISHABLE_KEY: SUPABASE_PUBLISHABLE_KEY,
     };
