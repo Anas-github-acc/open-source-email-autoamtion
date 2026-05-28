@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Loader2, CheckCircle2, AlertTriangle, Github, Database, Key } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/integrations/supabase/client";
 import { persistUserFromAccessToken } from "@/app/actions/authActions";
@@ -92,39 +92,70 @@ export default function AuthCallback() {
     };
   }, [router]);
 
-  // ── Status label map ──────────────────────────────────────────────────────
-  const statusLabel: Record<SetupStatus, string> = {
-    authenticating: "Authenticating with GitHub…",
-    persisting: "Saving your account…",
-    forking: "Setting up your workspace…",
-    done: "All done! Redirecting…",
-    error: "Something went wrong",
+  // ── Status details map ────────────────────────────────────────────────────
+  const statusDetails: Record<SetupStatus, { title: string; subtitle: string; icon: React.ReactNode }> = {
+    authenticating: {
+      title: "Authenticating",
+      subtitle: "Connecting to your GitHub account...",
+      icon: <Github className="h-12 w-12 text-primary animate-pulse" />
+    },
+    persisting: {
+      title: "Saving Account",
+      subtitle: "Creating your profile securely...",
+      icon: <Database className="h-12 w-12 text-primary animate-pulse" />
+    },
+    forking: {
+      title: "Setting Up Workspace",
+      subtitle: "Forking repository and securely configuring your secrets. This may take a few seconds...",
+      icon: <Key className="h-12 w-12 text-primary animate-bounce" />
+    },
+    done: {
+      title: "All Set!",
+      subtitle: "Taking you to your dashboard...",
+      icon: <CheckCircle2 className="h-12 w-12 text-green-500" />
+    },
+    error: {
+      title: "Authentication Failed",
+      subtitle: errorMessage || "Something went wrong",
+      icon: <AlertTriangle className="h-12 w-12 text-destructive" />
+    },
   };
 
-  if (status === "error") {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="text-sm text-muted-foreground">{errorMessage}</div>
-      </div>
-    );
-  }
+  const currentStatus = statusDetails[status];
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background">
-      {status === "done" ? (
-        <CheckCircle2 className="h-6 w-6 text-green-500" />
-      ) : (
-        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-      )}
-
-      <p className="text-sm text-muted-foreground">{statusLabel[status]}</p>
-
-      {forkWarning && (
-        <div className="flex max-w-sm items-start gap-2 rounded-md border border-yellow-500/40 bg-yellow-500/10 px-4 py-3 text-xs text-yellow-700 dark:text-yellow-300">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>Repo setup warning: {forkWarning}</span>
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background p-4">
+      <div className="w-full max-w-md rounded-2xl border border-border bg-card p-10 text-center shadow-2xl transition-all duration-500 ease-in-out transform scale-100">
+        <div className="mb-8 flex justify-center">
+          <div className="relative flex h-24 w-24 items-center justify-center rounded-full bg-primary/10">
+            {currentStatus.icon}
+            {status !== "done" && status !== "error" && (
+              <div className="absolute inset-0 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
+            )}
+          </div>
         </div>
-      )}
+
+        <h1 className="mb-2 text-2xl font-bold tracking-tight text-card-foreground">
+          {currentStatus.title}
+        </h1>
+        
+        <p className="mb-8 text-sm text-muted-foreground">
+          {currentStatus.subtitle}
+        </p>
+
+        {status !== "done" && status !== "error" && (
+          <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+            <div className="h-full bg-primary transition-all duration-500 ease-in-out animate-pulse" style={{ width: status === 'authenticating' ? '33%' : status === 'persisting' ? '66%' : '100%' }} />
+          </div>
+        )}
+
+        {forkWarning && (
+          <div className="mt-8 flex items-start gap-3 rounded-lg border border-yellow-500/40 bg-yellow-500/10 p-4 text-left text-sm text-yellow-700 dark:text-yellow-300">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+            <span><strong>Repo setup warning:</strong> {forkWarning}</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
