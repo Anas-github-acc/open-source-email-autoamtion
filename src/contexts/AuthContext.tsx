@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
@@ -41,71 +41,86 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const clearAuthState = () => {
+  const clearAuthState = useCallback(() => {
     setSession(null);
     setUser(null);
     setProfile(null);
-  };
+  }, []);
 
-  const revalidateSession = async () => {
-    const { data, error } = await supabase.auth.getUser();
+  const revalidateSession = useCallback(async () => {
+    // Race the network call against a 5-second timeout so a slow or hung
+    // getUser() request can never permanently freeze the loading spinner.
+    const timeout = new Promise<null>((resolve) =>
+      window.setTimeout(() => resolve(null), 5_000)
+    );
 
-    if (error || !data.user) {
+    const result = await Promise.race([
+      supabase.auth.getUser().then(({ data, error }) => (error || !data.user ? null : data.user)),
+      timeout,
+    ]);
+
+    if (!result) {
       clearAuthState();
-      await supabase.auth.signOut();
+      // Only sign out if we actually had a session token that was rejected (not a timeout).
+      supabase.auth.getSession().then(({ data }) => {
+        if (data.session) void supabase.auth.signOut();
+      });
       return null;
     }
 
-    setUser(data.user);
-    return data.user;
-  };
+    setUser(result);
+    return result;
+  }, [clearAuthState]);
 
-  const fetchProfileData = async (userId: string) => {
+  const fetchProfileData = useCallback(async (userId: string) => {
     try {
       const data = await fetchProfile<Profile>(userId);
       setProfile(data);
     } catch {
       setProfile(null);
     }
-  };
+  }, []);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        try {
-          // User was deleted or session was revoked server-side — kick them out.
-          if (event === "SIGNED_OUT") {
-            clearAuthState();
-            setLoading(false);
-            window.location.replace("/");
-            return;
-          }
-
-          setSession(session);
-          setUser(session?.user ?? null);
-
-          if (session?.user) {
-            const verifiedUser = await revalidateSession();
-            if (verifiedUser) {
-              setTimeout(() => fetchProfileData(verifiedUser.id), 0);
-            }
-          } else {
-            setProfile(null);
-          }
-        } finally {
+      (event, session) => {
+        // User was deleted or session was revoked server-side — kick them out.
+        if (event === "SIGNED_OUT") {
+          clearAuthState();
           setLoading(false);
+          window.location.replace("/");
+          return;
         }
+
+        // Update local state immediately from the session payload (no network call).
+        setSession(session);
+        setUser(session?.user ?? null);
+
+        if (session?.user) {
+          // Revalidate in the background — don't block loading on this.
+          const userId = session.user.id;
+          void revalidateSession().then((verifiedUser) => {
+            if (verifiedUser) void fetchProfileData(userId);
+          });
+        } else {
+          setProfile(null);
+        }
+
+        setLoading(false);
       }
     );
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    // getSession() reads from local storage — always fast. Use it to resolve
+    // the initial loading state immediately without waiting for any network call.
+    supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        const verifiedUser = await revalidateSession();
-        if (verifiedUser) {
-          fetchProfileData(verifiedUser.id);
-        }
+        // Revalidate + fetch profile in the background.
+        const userId = session.user.id;
+        void revalidateSession().then((verifiedUser) => {
+          if (verifiedUser) void fetchProfileData(userId);
+        });
       }
       setLoading(false);
     }).catch(() => {
@@ -123,7 +138,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       subscription.unsubscribe();
       window.clearInterval(interval);
     };
-  }, []);
+  }, [clearAuthState, fetchProfileData, revalidateSession]);
 
   const signUp = async (email: string, password: string, fullName: string) => {
     const { error } = await supabase.auth.signUp({
