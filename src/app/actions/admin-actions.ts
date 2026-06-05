@@ -246,6 +246,7 @@ export async function fetchCampaignSequences<T>(campaignId: string) {
     .from("campaign_sequences")
     .select("*")
     .eq("campaign_id", campaignId)
+    .eq("deleted", false)
     .order("step_number", { ascending: true });
   if (error) throw error;
   return (data ?? []) as T[];
@@ -254,23 +255,30 @@ export async function fetchCampaignSequences<T>(campaignId: string) {
 export async function upsertCampaignSequences(campaignId: string, steps: SequenceStepInput[]) {
   const supabase = createServerSupabase();
 
-  // Delete all existing steps for this campaign
-  const { error: deleteError } = await supabase
-    .from("campaign_sequences")
-    .delete()
-    .eq("campaign_id", campaignId);
+  const {error: deleteError} = await supabase
+  .from("campaign_sequences")
+  .update({ deleted: true })
+  .eq("campaign_id", campaignId);
+
   if (deleteError) throw deleteError;
 
   if (!steps.length) return;
 
-  const { error: insertError } = await supabase.from("campaign_sequences").insert(
-    steps.map((s) => ({
-      campaign_id: campaignId,
-      step_number: s.stepNumber,
-      template_id: s.templateId,
-      delay_days: s.delayDays,
-    }))
+  const {error: insertError} = await supabase
+    .from("campaign_sequences")
+    .upsert(
+      steps.map((s) => ({
+        campaign_id: campaignId,
+        step_number: s.stepNumber,
+        template_id: s.templateId,
+        delay_days: s.delayDays,
+        deleted: false,
+      })),
+      {
+        onConflict: "campaign_id,step_number",
+      }
   );
+
   if (insertError) throw insertError;
 }
 

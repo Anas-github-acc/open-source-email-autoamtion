@@ -120,6 +120,7 @@ export type Database = {
           id: string
           step_number: number
           template_id: string | null
+          deleted: boolean | false
         }
         Insert: {
           campaign_id: string
@@ -128,6 +129,7 @@ export type Database = {
           id?: string
           step_number: number
           template_id?: string | null
+          deleted?: boolean
         }
         Update: {
           campaign_id?: string
@@ -136,6 +138,7 @@ export type Database = {
           id?: string
           step_number?: number
           template_id?: string | null
+          deleted?: boolean
         }
         Relationships: [
           {
