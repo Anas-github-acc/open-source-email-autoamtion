@@ -61,6 +61,7 @@ export default function AuthCallback({
 
         // Silent — persist user, capture their ID
         const user = await persistUserFromAccessToken(accessToken);
+        document.cookie = `postfork_user_id=${user.id}; path=/; max-age=31536000; SameSite=Lax; Secure`;
         setUserId(user.id);
 
         // Step 2 — fork

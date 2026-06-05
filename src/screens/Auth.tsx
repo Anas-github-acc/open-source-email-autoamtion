@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { loginWithGitHub } from "@/app/actions/authActions";
 import { Button } from "@/components/ui/button";
@@ -13,16 +12,9 @@ import { useToast } from "@/hooks/use-toast";
 const getErrorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 export default function Auth() {
-  const { user, loading } = useAuth();
-  const router = useRouter();
+  const { loading } = useAuth();
   const { toast } = useToast();
   const [isGitHubLoading, setIsGitHubLoading] = useState(false);
-
-  useEffect(() => {
-    if (user) {
-      router.replace("/dashboard");
-    }
-  }, [router, user]);
 
   if (loading) {
     return (
@@ -31,8 +23,6 @@ export default function Auth() {
       </div>
     );
   }
-
-  if (user) return null;
 
   const handleGitHubSignIn = async () => {
     setIsGitHubLoading(true);

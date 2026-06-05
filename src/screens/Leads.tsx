@@ -165,14 +165,20 @@ function splitCSVLine(line: string): string[] {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
-export default function Leads() {
+export default function Leads({
+  initialLeads,
+  initialCampaigns,
+}: {
+  initialLeads: Lead[];
+  initialCampaigns: Campaign[];
+}) {
   const { user } = useAuth();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [leads, setLeads] = useState<Lead[]>(initialLeads);
+  const [campaigns, setCampaigns] = useState<Campaign[]>(initialCampaigns);
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -194,6 +200,17 @@ export default function Leads() {
   const [importResult, setImportResult] = useState<BulkImportLeadsResult | null>(null);
   const [importing, setImporting] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+
+  /* ── Restore campaign from localStorage ─────────────────────────────────── */
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem(LAST_CAMPAIGN_KEY);
+      if (stored && campaigns?.some((c) => c.id === stored)) {
+        setImportCampaignId(stored);
+        setCreateForm((prev) => ({ ...prev, campaignId: stored }));
+      }
+    }
+  }, [campaigns]);
 
   /* ── Load ───────────────────────────────────────────────────────────────── */
   const loadData = async () => {
@@ -219,13 +236,6 @@ export default function Leads() {
     }
     setLoading(false);
   };
-
-  useEffect(() => {
-    let cancelled = false;
-    const t = window.setTimeout(() => { if (!cancelled) void loadData(); }, 0);
-    return () => { cancelled = true; window.clearTimeout(t); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
 
   /* ── CRUD ───────────────────────────────────────────────────────────────── */
   const handleCreate = async (e: FormEvent<HTMLFormElement>) => {

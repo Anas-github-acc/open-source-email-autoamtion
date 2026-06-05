@@ -150,16 +150,26 @@ function FL({ children, req }: { children: React.ReactNode; req?: boolean }) {
   );
 }
 
-export default function Campaigns() {
+export default function Campaigns({
+  initialCampaigns,
+  initialTemplates,
+  initialLeads,
+  initialSenders,
+}: {
+  initialCampaigns: Campaign[];
+  initialTemplates: Template[];
+  initialLeads: Lead[];
+  initialSenders: Sender[];
+}) {
   const { user } = useAuth();
   const { toast } = useToast();
 
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [templates, setTemplates] = useState<Template[]>([]);
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [senders, setSenders] = useState<Sender[]>([]);
+  const [campaigns, setCampaigns] = useState<Campaign[]>(initialCampaigns);
+  const [templates, setTemplates] = useState<Template[]>(initialTemplates);
+  const [leads, setLeads] = useState<Lead[]>(initialLeads);
+  const [senders, setSenders] = useState<Sender[]>(initialSenders);
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -173,7 +183,11 @@ export default function Campaigns() {
   const [leadDialogOpen, setLeadDialogOpen] = useState(false);
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
 
-  const [createForm, setCreateForm] = useState<CampaignForm>({ ...DEFAULT_FORM });
+  const [createForm, setCreateForm] = useState<CampaignForm>(() => ({
+    ...DEFAULT_FORM,
+    senderAccountId: initialSenders?.[0]?.id || "",
+    templateId: initialTemplates?.[0]?.id || "",
+  }));
   const [createSteps, setCreateSteps] = useState<StepDraft[]>([]);
 
   const [editForm, setEditForm] = useState<CampaignForm>({ ...DEFAULT_FORM });
@@ -209,13 +223,6 @@ export default function Campaigns() {
     }
     setLoading(false);
   };
-
-  useEffect(() => {
-    let cancelled = false;
-    const t = window.setTimeout(() => { if (!cancelled) void loadWorkspace(); }, 0);
-    return () => { cancelled = true; window.clearTimeout(t); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
 
   const activeCount = campaigns.filter((c) => c.status.toLowerCase() === "active").length;
 

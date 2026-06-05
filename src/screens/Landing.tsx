@@ -1,5 +1,3 @@
-"use client";
-
 import Link from "next/link";
 import { ArrowRight, Github, Zap, GitFork, Mail, Activity, Lock, Terminal } from "lucide-react";
 import { StackedLogo } from "@/components/StackedLogo";

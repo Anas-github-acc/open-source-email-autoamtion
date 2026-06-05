@@ -1,6 +1,3 @@
-"use client";
-
-import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -11,10 +8,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useAuth } from "@/contexts/AuthContext";
 import type { Tables } from "@/integrations/supabase/types";
 import { fetchUserEvents } from "@/app/actions/admin-actions";
-import { Activity, Loader2, Send, MessageSquare } from "lucide-react";
+import { Activity, Send, MessageSquare } from "lucide-react";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
 type EmailEvent = Tables<"email_events">;
 
@@ -37,47 +35,21 @@ function formatDate(value: string) {
   return new Date(value).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
-export default function Events() {
-  const { user } = useAuth();
-  const [events, setEvents] = useState<EmailEvent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+export default async function Events() {
+  const cookieStore = await cookies();
+  const userId = cookieStore.get("postfork_user_id")?.value;
+  if (!userId) {
+    redirect("/");
+  }
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadEvents = async () => {
-      if (!user) {
-        setLoading(false);
-        return;
-      }
-
-      setLoading(true);
-      setError(null);
-
-      if (cancelled) {
-        return;
-      }
-
-      try {
-        const data = await fetchUserEvents<EmailEvent>(user.id);
-        setEvents(data ?? []);
-      } catch (requestError) {
-        setError(requestError instanceof Error ? requestError.message : "Failed to load events");
-      }
-
-      setLoading(false);
-    };
-
-    const timeoutId = window.setTimeout(() => {
-      if (!cancelled) void loadEvents();
-    }, 0);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timeoutId);
-    };
-  }, [user]);
+  let events: EmailEvent[] = [];
+  let error: string | null = null;
+  try {
+    const data = await fetchUserEvents<EmailEvent>(userId);
+    events = data ?? [];
+  } catch (requestError) {
+    error = requestError instanceof Error ? requestError.message : "Failed to load events";
+  }
 
   const sentCount = events.filter((event) => event.event_type.toLowerCase() === "sent").length;
   const replyCount = events.filter((event) => event.event_type.toLowerCase() === "replied").length;
@@ -121,12 +93,7 @@ export default function Events() {
             <h2 className="text-[14px] font-semibold">Latest events</h2>
           </div>
 
-          {loading ? (
-            <div className="flex items-center justify-center py-16 text-muted-foreground">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Loading events...
-            </div>
-          ) : error ? (
+          {error ? (
             <div className="px-4 py-12 text-center text-sm text-destructive">{error}</div>
           ) : events.length ? (
             <Table>
