@@ -58,11 +58,16 @@ export default function AuthCallback({
 
         if (!accessToken) throw new Error("No access token found. Please try again.");
         mark("connecting", "done");
-
+ 
         // Silent — persist user, capture their ID
-        const user = await persistUserFromAccessToken(accessToken);
-        setUserId(user.id);
-
+        const result = await persistUserFromAccessToken(accessToken);
+        
+        console.log("isNewUser =", result.isNewUser);
+        if (!result.isNewUser) {
+          router.replace("/dashboard");
+          return;
+        }
+        setUserId(result.user.id);
         // Step 2 — fork
         mark("forking", "active");
         const providerToken = session?.provider_token ?? null;
@@ -88,7 +93,7 @@ export default function AuthCallback({
 
         // Step 3 — inject secrets
         mark("secrets", "active");
-        const secretsResult = await injectSecretsStep(providerToken, forkResult.login, user.id);
+        const secretsResult = await injectSecretsStep(providerToken, forkResult.login, result.user.id);
 
         if (!secretsResult.ok) {
           setForkError(secretsResult.error);
