@@ -23,7 +23,7 @@ function getDisplayName(user: User) {
   );
 }
 
-export async function loginWithGitHub(origin?: string ) {
+export async function loginWithGitHub(origin?: string) {
   const supabase = createServerSupabase();
 
   const baseUrl = origin ?? process.env.NEXT_PUBLIC_NEXT_URL;
@@ -63,6 +63,14 @@ export async function persistUserFromAccessToken(accessToken: string) {
   if (!user) throw new Error("Unable to resolve user from access token");
   if (!user.email) throw new Error("Authenticated GitHub user did not provide an email address");
 
+  const { data: existingUser } = await supabase
+    .from("users")
+    .select("id")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const isNewUser = !existingUser;
+
   const userRecord: PublicUserRecord = {
     id: user.id,
     email: user.email,
@@ -85,7 +93,10 @@ export async function persistUserFromAccessToken(accessToken: string) {
       throw error;
     }
     console.log("[persistUserFromAccessToken] Upserted successfully:", data);
-    return data as PublicUserRecord;
+    return {
+      user: data as PublicUserRecord,
+      isNewUser,
+    };
   } catch (e: unknown) {
     // If email is unique and belongs to an old public user id, merge that row
     // into the Supabase auth id without rewriting a referenced primary key.
@@ -110,7 +121,10 @@ export async function persistUserFromAccessToken(accessToken: string) {
           .single();
 
         if (updateError) throw updateError;
-        return updated as PublicUserRecord;
+        return {
+          user: data as PublicUserRecord,
+          isNewUser,
+        };
       }
 
       const temporaryEmail = `${existingUser.email}#merged-${existingUser.id}`;
@@ -144,7 +158,10 @@ export async function persistUserFromAccessToken(accessToken: string) {
         .eq("id", existingUser.id);
 
       if (deleteOldUserError) throw deleteOldUserError;
-      return mergedUser as PublicUserRecord;
+      return {
+        user: mergedUser as PublicUserRecord,
+        isNewUser,
+      };
     }
 
     throw e;
