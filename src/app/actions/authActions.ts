@@ -63,21 +63,13 @@ export async function persistUserFromAccessToken(accessToken: string) {
   if (!user) throw new Error("Unable to resolve user from access token");
   if (!user.email) throw new Error("Authenticated GitHub user did not provide an email address");
 
-  const { data: existingUser } = await supabase
-    .from("users")
-    .select("id")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  const isNewUser = !existingUser;
-
   const userRecord: PublicUserRecord = {
     id: user.id,
     email: user.email,
     name: getDisplayName(user),
   };
 
-  console.log("[persistUserFromAccessToken] Upserting user:", userRecord.id, userRecord.email, userRecord.name);
+  // console.log("[persistUserFromAccessToken] Upserting user:", userRecord.id, userRecord.email, userRecord.name);
 
   // Upsert into public.users using the service-role server client.
   // Service role bypasses RLS, so this should always succeed.
@@ -93,10 +85,8 @@ export async function persistUserFromAccessToken(accessToken: string) {
       throw error;
     }
     console.log("[persistUserFromAccessToken] Upserted successfully:", data);
-    return {
-      user: data as PublicUserRecord,
-      isNewUser,
-    };
+    
+    return data as PublicUserRecord;
   } catch (e: unknown) {
     // If email is unique and belongs to an old public user id, merge that row
     // into the Supabase auth id without rewriting a referenced primary key.
@@ -121,10 +111,7 @@ export async function persistUserFromAccessToken(accessToken: string) {
           .single();
 
         if (updateError) throw updateError;
-        return {
-          user: updated as PublicUserRecord,
-          isNewUser,
-        };
+        return updated as PublicUserRecord;
       }
 
       const temporaryEmail = `${existingUser.email}#merged-${existingUser.id}`;
@@ -158,10 +145,7 @@ export async function persistUserFromAccessToken(accessToken: string) {
         .eq("id", existingUser.id);
 
       if (deleteOldUserError) throw deleteOldUserError;
-      return {
-        user: mergedUser as PublicUserRecord,
-        isNewUser,
-      };
+      return mergedUser as PublicUserRecord
     }
 
     throw e;

@@ -60,20 +60,12 @@ export default function AuthCallback({
         mark("connecting", "done");
  
         // Silent — persist user, capture their ID
-        const result = await persistUserFromAccessToken(accessToken);
-        if (!result) throw new Error("something went wrong.. when accessing user. Please raise the issue on https://github.com/Anas-github-acc/dumpmail-www/issues")
+        const user = await persistUserFromAccessToken(accessToken);
+        if (!user) throw new Error("something went wrong.. when accessing user. Please raise the issue on https://github.com/Anas-github-acc/dumpmail-www/issues")
 
-        document.cookie = `dumpmail_user_id=${result.user.id}; path=/; max-age=31536000; SameSite=Lax; Secure`;
+        document.cookie = `dumpmail_user_id=${user.id}; path=/; max-age=31536000; SameSite=Lax; Secure`;
 
-        setUserId(result.user.id);
-        console.log("isNewUser =", result.isNewUser);
-        if (!result.isNewUser) {
-          router.replace("/dashboard");
-          return;
-        }
-
-        // Step 2 — fork
-        mark("forking", "active");
+        setUserId(user.id);
         const providerToken = session?.provider_token ?? null;
 
         if (!providerToken) {
@@ -82,6 +74,9 @@ export default function AuthCallback({
           mark("secrets", "error");
           return;
         }
+
+        // Step 2 — fork
+        mark("forking", "active");
 
         const forkResult = await forkRepoStep(providerToken);
 
@@ -97,7 +92,7 @@ export default function AuthCallback({
 
         // Step 3 — inject secrets
         mark("secrets", "active");
-        const secretsResult = await injectSecretsStep(providerToken, forkResult.login, result.user.id);
+        const secretsResult = await injectSecretsStep(providerToken, forkResult.login, user.id);
 
         if (!secretsResult.ok) {
           setForkError(secretsResult.error);
