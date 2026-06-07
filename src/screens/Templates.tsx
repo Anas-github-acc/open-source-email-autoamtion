@@ -53,7 +53,8 @@ function formatBytes(b: number) {
   return `${(b / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function formatDate(v: string) {
+function formatDate(v: string | null | undefined) {
+  if (!v) return "—";
   return new Date(v).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
@@ -468,12 +469,16 @@ function AttachedFileCard({
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export default function Templates() {
+export default function Templates({
+  initialTemplates,
+}: {
+  initialTemplates: Template[];
+}) {
   const { user } = useAuth();
   const { toast } = useToast();
 
-  const [templates, setTemplates] = useState<Template[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [templates, setTemplates] = useState<Template[]>(initialTemplates);
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -521,13 +526,6 @@ export default function Templates() {
     }
     setLoading(false);
   };
-
-  useEffect(() => {
-    let cancelled = false;
-    const id = window.setTimeout(() => { if (!cancelled) void loadTemplates(); }, 0);
-    return () => { cancelled = true; window.clearTimeout(id); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
 
   // localStorage draft (text fields only)
   useEffect(() => {

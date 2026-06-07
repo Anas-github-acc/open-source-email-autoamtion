@@ -165,14 +165,20 @@ function splitCSVLine(line: string): string[] {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
-export default function Leads() {
+export default function Leads({
+  initialLeads,
+  initialCampaigns,
+}: {
+  initialLeads: Lead[];
+  initialCampaigns: Campaign[];
+}) {
   const { user } = useAuth();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [leads, setLeads] = useState<Lead[]>(initialLeads);
+  const [campaigns, setCampaigns] = useState<Campaign[]>(initialCampaigns);
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -194,6 +200,17 @@ export default function Leads() {
   const [importResult, setImportResult] = useState<BulkImportLeadsResult | null>(null);
   const [importing, setImporting] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+
+  /* ── Restore campaign from localStorage ─────────────────────────────────── */
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem(LAST_CAMPAIGN_KEY);
+      if (stored && campaigns?.some((c) => c.id === stored)) {
+        setImportCampaignId(stored);
+        setCreateForm((prev) => ({ ...prev, campaignId: stored }));
+      }
+    }
+  }, [campaigns]);
 
   /* ── Load ───────────────────────────────────────────────────────────────── */
   const loadData = async () => {
@@ -220,13 +237,6 @@ export default function Leads() {
     setLoading(false);
   };
 
-  useEffect(() => {
-    let cancelled = false;
-    const t = window.setTimeout(() => { if (!cancelled) void loadData(); }, 0);
-    return () => { cancelled = true; window.clearTimeout(t); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
-
   /* ── CRUD ───────────────────────────────────────────────────────────────── */
   const handleCreate = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -249,7 +259,7 @@ export default function Leads() {
 
   const handleStartEdit = (lead: Lead) => {
     setEditingLead(lead);
-    setEditForm({ name: lead.name ?? "", email: lead.email, company: lead.company ?? "", role: lead.role ?? "", source: lead.source ?? "csv", status: lead.status ?? "new", private: lead.private, campaignId: "" });
+    setEditForm({ name: lead.name ?? "", email: lead.email, company: lead.company ?? "", role: lead.role ?? "", source: lead.source ?? "csv", status: lead.status ?? "new", private: lead.private ?? false, campaignId: "" });
     setView("edit");
   };
 
@@ -351,7 +361,7 @@ export default function Leads() {
 
   /* ── Stats ──────────────────────────────────────────────────────────────── */
   const activeCount = leads.filter((l) => ["active", "engaged", "replied"].includes((l.status ?? "").toLowerCase())).length;
-  const contactedCount = leads.filter((l) => Boolean(l.last_contacted_at)).length;
+  const contactedCount = leads.filter((l) => Boolean((l as any).last_contacted_at)).length;
 
   /* ── Shared form card ───────────────────────────────────────────────────── */
   const renderFormFields = (form: LeadForm, setForm: React.Dispatch<React.SetStateAction<LeadForm>>) => (
@@ -515,7 +525,7 @@ export default function Leads() {
                           )}
                         </TableCell>
                         <TableCell><Badge variant={statusVariant(lead.status)} className="capitalize">{(lead.status ?? "new").replace(/_/g, " ")}</Badge></TableCell>
-                        <TableCell className="text-muted-foreground">{formatDate(lead.last_contacted_at)}</TableCell>
+                        <TableCell className="text-muted-foreground">{formatDate((lead as any).last_contacted_at)}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end items-center gap-1">
                             <Button variant="ghost" size="icon" onClick={() => handleStartEdit(lead)} className="h-8 w-8 hover:bg-secondary" title="Edit"><Edit className="h-3.5 w-3.5 text-muted-foreground" /></Button>

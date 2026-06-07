@@ -61,13 +61,16 @@ export default function AuthCallback({
  
         // Silent — persist user, capture their ID
         const result = await persistUserFromAccessToken(accessToken);
+        document.cookie = `postfork_user_id=${user.id}; path=/; max-age=31536000; SameSite=Lax; Secure`;
+        
+        setUserId(result.user.id);
         
         console.log("isNewUser =", result.isNewUser);
         if (!result.isNewUser) {
           router.replace("/dashboard");
           return;
         }
-        setUserId(result.user.id);
+
         // Step 2 — fork
         mark("forking", "active");
         const providerToken = session?.provider_token ?? null;

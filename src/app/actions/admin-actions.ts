@@ -156,24 +156,28 @@ export async function updateProfile<T>(userId: string, profile: { name: string; 
 export async function fetchDashboardStats(userId?: string) {
   const supabase = createServerSupabase();
 
-  const [campaigns, leads, templates, senders] = await Promise.all([
+  const [campaigns, leads, templates, senders, events] = await Promise.all([
     supabase.from("campaigns").select("id", { count: "exact", head: true }).eq("user_id", userId ?? ""),
     supabase.from("leads").select("id", { count: "exact", head: true }).or(`user_id.eq.${userId ?? ""},private.eq.false`),
     supabase.from("email_templates").select("id", { count: "exact", head: true }).eq("user_id", userId ?? ""),
     supabase.from("sender_accounts").select("id", { count: "exact", head: true }).eq("user_id", userId ?? ""),
+    userId
+      ? supabase
+          .from("email_events")
+          .select("id, campaign_leads!inner(campaigns!inner(user_id))", { count: "exact", head: true })
+          .eq("campaign_leads.campaigns.user_id", userId)
+      : Promise.resolve({ count: 0, error: null }),
   ]);
 
-  const firstError = campaigns.error ?? leads.error ?? templates.error ?? senders.error;
+  const firstError = campaigns.error ?? leads.error ?? templates.error ?? senders.error ?? events.error;
   if (firstError) throw firstError;
-
-  const userEvents = userId ? await fetchUserEvents(userId) : [];
 
   return {
     campaigns: campaigns.count ?? 0,
     leads: leads.count ?? 0,
     templates: templates.count ?? 0,
     senders: senders.count ?? 0,
-    events: userEvents.length,
+    events: events.count ?? 0,
   } satisfies DashboardStats;
 }
 
@@ -308,41 +312,15 @@ export async function fetchEvents<T>() {
 export async function fetchUserEvents<T>(userId: string) {
   const supabase = createServerSupabase();
 
-  const [campaigns, senders] = await Promise.all([
-    supabase.from("campaigns").select("id").eq("user_id", userId),
-    supabase.from("sender_accounts").select("id").eq("user_id", userId),
-  ]);
-
-  const firstError = campaigns.error ?? senders.error;
-  if (firstError) throw firstError;
-
-  const campaignIds = (campaigns.data ?? []).map((campaign) => campaign.id);
-  const senderIds = (senders.data ?? []).map((sender) => sender.id);
-
-  let campaignLeadIds: string[] = [];
-  if (campaignIds.length) {
-    const { data, error } = await supabase
-      .from("campaign_leads")
-      .select("id")
-      .in("campaign_id", campaignIds);
-
-    if (error) throw error;
-    campaignLeadIds = (data ?? []).map((campaignLead) => campaignLead.id);
-  }
-
-  const filters = [
-    campaignLeadIds.length ? `campaign_lead_id.in.(${campaignLeadIds.join(",")})` : null,
-    senderIds.length ? `sender_account_id.in.(${senderIds.join(",")})` : null,
-  ].filter(Boolean);
-
-  if (!filters.length) {
-    return [] as T[];
-  }
-
   const { data, error } = await supabase
     .from("email_events")
-    .select("*")
-    .or(filters.join(","))
+    .select(`
+      *,
+      campaign_leads!inner(
+        campaigns!inner(id)
+      )
+    `)
+    .eq("campaign_leads.campaigns.user_id", userId)
     .order("created_at", { ascending: false });
 
   if (error) throw error;
@@ -352,24 +330,19 @@ export async function fetchUserEvents<T>(userId: string) {
 export async function fetchCampaignLeadDetails(userId: string, campaignId: string) {
   const supabase = createServerSupabase();
 
-  const { data: campaign, error: campaignError } = await supabase
-    .from("campaigns")
-    .select("id")
-    .eq("id", campaignId)
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (campaignError) throw campaignError;
-  if (!campaign) throw new Error("Campaign not found");
-
   const { data, error } = await supabase
     .from("campaign_leads")
-    .select("*, leads(*)")
+    .select(`
+      *,
+      leads(*),
+      campaigns!inner(id, user_id)
+    `)
     .eq("campaign_id", campaignId)
+    .eq("campaigns.user_id", userId)
     .order("created_at", { ascending: false });
 
   if (error) throw error;
-  return (data ?? []) as CampaignLeadDetail[];
+  return (data ?? []) as unknown as CampaignLeadDetail[];
 }
 
 export async function createTemplate<T>(userId: string, input: CreateTemplateInput) {
@@ -581,23 +554,16 @@ export async function createLead<T>(input: CreateLeadInput) {
 
   if (input.campaign_id && data) {
     const now = new Date().toISOString();
-    // Only attach if not already in the campaign (upsert logic will just handle it, but select first to be safe, or just insert on conflict ignore - but supabase JS doesn't do ignore easily without RPC. We'll just select first.)
-    const { data: existing } = await supabase
-      .from("campaign_leads")
-      .select("lead_id")
-      .eq("campaign_id", input.campaign_id)
-      .eq("lead_id", data.id)
-      .single();
-
-    if (!existing) {
-      await supabase.from("campaign_leads").insert({
-        campaign_id: input.campaign_id,
-        lead_id: data.id,
-        current_step: 0,
-        next_send_at: now,
-        status: "pending",
-      });
-    }
+    await supabase.from("campaign_leads").upsert({
+      campaign_id: input.campaign_id,
+      lead_id: data.id,
+      current_step: 0,
+      next_send_at: now,
+      status: "pending",
+    },
+    {
+      onConflict: "campaign_id,lead_id"
+    });
   }
 
   return data as T;
@@ -934,35 +900,15 @@ export async function updateCampaign<T>(
   if (error) throw error;
 
   if (input.leadIds) {
-    const { data: existingLeads } = await supabase
-      .from("campaign_leads")
-      .select("lead_id")
-      .eq("campaign_id", id);
+    const { error } = await supabase.rpc(
+      "www_sync_campaign_leads",
+      {
+        p_campaign_id: id,
+        p_lead_ids: input.leadIds,
+      }
+    );
 
-    const existingLeadIds = (existingLeads ?? []).map((l) => l.lead_id);
-    const toRemove = existingLeadIds.filter((l) => !input.leadIds!.includes(l));
-    const toAdd = input.leadIds.filter((l) => !existingLeadIds.includes(l));
-
-    if (toRemove.length > 0) {
-      await supabase
-        .from("campaign_leads")
-        .delete()
-        .eq("campaign_id", id)
-        .in("lead_id", toRemove);
-    }
-
-    if (toAdd.length > 0) {
-      const now = new Date().toISOString();
-      await supabase.from("campaign_leads").insert(
-        toAdd.map((leadId) => ({
-          campaign_id: id,
-          lead_id: leadId,
-          current_step: 0,
-          next_send_at: now,
-          status: "pending",
-        }))
-      );
-    }
+    if (error) throw error;
   }
 
   return data as T;

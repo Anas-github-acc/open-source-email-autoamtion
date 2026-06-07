@@ -52,11 +52,15 @@ function healthVariant(score: number | null) {
   return "destructive";
 }
 
-export default function Senders() {
+export default function Senders({
+  initialSenders,
+}: {
+  initialSenders: Sender[];
+}) {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [senders, setSenders] = useState<Sender[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [senders, setSenders] = useState<Sender[]>(initialSenders);
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -101,18 +105,6 @@ export default function Senders() {
     }
     setLoading(false);
   };
-
-  useEffect(() => {
-    let cancelled = false;
-    const timeoutId = window.setTimeout(() => {
-      if (!cancelled) void loadSenders();
-    }, 0);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timeoutId);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
 
   const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -204,7 +196,7 @@ export default function Senders() {
     setSaving(false);
   };
 
-  const activeCount = senders.filter((sender) => sender.status.toLowerCase() === "active").length;
+  const activeCount = senders.filter((sender) => sender.status?.toLowerCase() === "active").length;
   const reviewCount = Math.max(senders.length - activeCount, 0);
 
   const renderFormFields = (
@@ -348,7 +340,7 @@ export default function Senders() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <Badge variant={sender.status.toLowerCase() === "active" ? "default" : "outline"} className="capitalize">
+                          <Badge variant={sender.status?.toLowerCase() === "active" ? "default" : "outline"} className="capitalize">
                             {sender.status}
                           </Badge>
                         </TableCell>
