@@ -436,3 +436,19 @@ export async function getWorkflowUsageStats(
     return { ok: false, error: message };
   }
 }
+
+/** Get the repository owner and name for the user's fork. */
+export async function getRepoInfo(
+  githubToken: string,
+): Promise<{ ok: true; owner: string; repo: string } | { ok: false; error: string }> {
+  try {
+    if (!githubToken) throw new Error("No GitHub provider token available");
+    const login = await getGitHubLogin(githubToken);
+    return { ok: true, owner: login, repo: SOURCE_REPO };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[getRepoInfo]", message);
+    return { ok: false, error: message };
+  }
+}
+

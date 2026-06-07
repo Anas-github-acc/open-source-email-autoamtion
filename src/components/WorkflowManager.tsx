@@ -8,6 +8,7 @@ import {
   listWorkflowRuns,
   getWorkflowRunDetails,
   getWorkflowUsageStats,
+  getRepoInfo,
 } from "@/app/actions/githubActions";
 import {
   Play,
@@ -26,12 +27,13 @@ import {
   GitCommit,
   GitBranch,
   HelpCircle,
-  ChevronLeft
+  ChevronLeft,
+  ExternalLink
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 
 export default function WorkflowManager() {
@@ -42,6 +44,9 @@ export default function WorkflowManager() {
   const [workflowState, setWorkflowState] = useState<string | null>(null);
   const [isToggling, setIsToggling] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState(false);
+  const [workflowError, setWorkflowError] = useState<string | null>(null);
+  const [repoInfo, setRepoInfo] = useState<{ owner: string; repo: string } | null>(null);
+  const [isErrorDialogOpen, setIsErrorDialogOpen] = useState(false);
 
   // Runs List Pagination State
   const [runs, setRuns] = useState<any[]>([]);
@@ -68,8 +73,10 @@ export default function WorkflowManager() {
     const res = await getWorkflowStatus(token);
     if (res.ok) {
       setWorkflowState(res.state);
+      setWorkflowError(null);
     } else {
       console.error(res.error);
+      setWorkflowError(res.error || "Failed to fetch workflow status");
     }
     setLoadingStatus(false);
   }, [token]);
@@ -91,6 +98,13 @@ export default function WorkflowManager() {
     if (token) {
       void fetchStatus();
       void fetchRuns(currentPage);
+      // Fetch repository details for the manual setup flow
+      void (async () => {
+        const infoRes = await getRepoInfo(token);
+        if (infoRes.ok) {
+          setRepoInfo({ owner: infoRes.owner, repo: infoRes.repo });
+        }
+      })();
     }
   }, [token, currentPage, fetchStatus, fetchRuns]);
 
@@ -207,7 +221,7 @@ export default function WorkflowManager() {
               <div className="flex items-center gap-2">
                 <Activity className="h-5 w-5 text-emerald-500" />
                 <CardTitle className="text-base font-semibold">Scheduler Automation</CardTitle>
-                {workflowState && (
+                {workflowState && !workflowError ? (
                   <Badge
                     variant="outline"
                     className={`text-[10px] px-2 py-0.5 capitalize ${
@@ -218,7 +232,14 @@ export default function WorkflowManager() {
                   >
                     {workflowState === "active" ? "Enabled" : "Disabled"}
                   </Badge>
-                )}
+                ) : workflowError ? (
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] px-2 py-0.5 bg-amber-500/10 text-amber-600 border-amber-500/20 font-semibold"
+                  >
+                    Manual Setup Needed
+                  </Badge>
+                ) : null}
               </div>
               <CardDescription className="text-[12px] font-mono text-muted-foreground">
                 schedule-send-mails.yml
@@ -252,15 +273,27 @@ export default function WorkflowManager() {
 
               <Button
                 size="sm"
-                onClick={handleToggle}
-                disabled={isToggling || loadingStatus || !workflowState}
-                style={{
+                onClick={workflowError ? () => setIsErrorDialogOpen(true) : handleToggle}
+                disabled={isToggling || loadingStatus || (!workflowState && !workflowError)}
+                style={workflowError ? {
+                  background: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)",
+                  boxShadow: "0 0 12px rgba(245, 158, 11, 0.4)",
+                } : {
                   backgroundColor: "#238636",
                 }}
-                className="h-8 gap-1.5 text-[12px] text-white hover:bg-[#29903b] active:bg-[#207c32] font-medium transition-colors duration-200 border-0 shadow-sm"
+                className={`h-8 gap-1.5 text-[12px] text-white font-medium transition-all duration-200 border-0 shadow-sm ${
+                  workflowError 
+                    ? "hover:brightness-110 ring-2 ring-amber-500/50 ring-offset-2 ring-offset-background scale-105" 
+                    : "hover:bg-[#29903b] active:bg-[#207c32]"
+                }`}
               >
                 {isToggling ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : workflowError ? (
+                  <>
+                    <Play className="h-3.5 w-3.5 fill-current text-white" />
+                    Enable Flow
+                  </>
                 ) : workflowState === "active" ? (
                   <>
                     <Square className="h-3.5 w-3.5 fill-current" />
@@ -510,6 +543,103 @@ export default function WorkflowManager() {
               )}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Manual Setup Instruction Dialog */}
+      <Dialog open={isErrorDialogOpen} onOpenChange={setIsErrorDialogOpen}>
+        <DialogContent className="max-w-md bg-card border border-border shadow-2xl rounded-lg overflow-hidden">
+          <DialogHeader className="border-b border-border/40 pb-4">
+            <div className="flex items-center gap-3 text-amber-500">
+              <AlertCircle className="h-6 w-6" />
+              <div>
+                <DialogTitle className="text-lg font-bold text-foreground">
+                  Manual Workflow Setup Required
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                  GitHub requires manual authorization for actions on forked repositories.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-2 text-sm text-foreground">
+            {workflowError && (
+              <div className="rounded-md bg-rose-500/10 border border-rose-500/20 p-3 text-xs text-rose-600 flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                <div>
+                  <span className="font-semibold">Fetch Error:</span> {workflowError}
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <h4 className="font-semibold text-xs text-muted-foreground uppercase tracking-wider">
+                How Automation Works
+              </h4>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Your mail automation runs on a scheduled GitHub Actions cron job inside your forked repository. GitHub provides you with <strong>1,000 free minutes per month</strong> for actions, which is plenty for this service.
+              </p>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                To prevent unwanted usage, we also provide a <strong>Disable Workflow</strong> action to completely stop the workflow and save your free cron minutes.
+              </p>
+            </div>
+
+            <div className="space-y-3 border-t border-border/40 pt-3">
+              <h4 className="font-semibold text-xs text-muted-foreground uppercase tracking-wider">
+                Instructions
+              </h4>
+              <ol className="list-decimal list-inside text-xs text-muted-foreground space-y-2 leading-relaxed">
+                <li>
+                  Go to your repository workflows directory here:
+                  <a
+                    href={`https://github.com/${repoInfo?.owner || "owner"}/${repoInfo?.repo || "repo"}/blob/main/.github/workflows`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-emerald-500 hover:text-emerald-600 font-semibold underline ml-1"
+                  >
+                    workflows directory
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </li>
+                <li>
+                  Paste/verify the content of the workflow files on GitHub to understand what they do.
+                </li>
+                <li>
+                  Click the button below to visit your GitHub Actions page.
+                </li>
+                <li>
+                  Click the green button on GitHub to **Enable Workflows** or **I understand my workflows, go ahead and enable them**.
+                </li>
+              </ol>
+            </div>
+          </div>
+
+          <DialogFooter className="border-t border-border/40 pt-4 gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsErrorDialogOpen(false)}
+              className="text-xs border-border/60 hover:bg-secondary/40"
+            >
+              Close
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                window.open(
+                  `https://github.com/${repoInfo?.owner || "owner"}/${repoInfo?.repo || "repo"}/actions`,
+                  "_blank"
+                );
+                setIsErrorDialogOpen(false);
+              }}
+              style={{ backgroundColor: "#238636" }}
+              className="text-xs text-white hover:bg-[#29903b] active:bg-[#207c32] font-semibold gap-1.5 border-0 shadow-sm"
+            >
+              Go to GitHub Actions
+              <ExternalLink className="h-3.5 w-3.5" />
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
