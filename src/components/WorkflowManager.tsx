@@ -9,6 +9,7 @@ import {
   getWorkflowRunDetails,
   getWorkflowUsageStats,
   getRepoInfo,
+  verifyAndSaveInstallation,
 } from "@/app/actions/githubActions";
 import {
   Play,
@@ -49,8 +50,13 @@ export default function WorkflowManager({
 }: WorkflowManagerProps) {
 
   // Workflow State
+  const [localRepoPermissionError, setLocalRepoPermissionError] = useState(repoPermissionError);
   const [workflowState, setWorkflowState] = useState<string | null>(null);
   const [isToggling, setIsToggling] = useState(false);
+
+  useEffect(() => {
+    setLocalRepoPermissionError(repoPermissionError);
+  }, [repoPermissionError]);
   const [loadingStatus, setLoadingStatus] = useState(false);
   const [workflowError, setWorkflowError] = useState<string | null>(null);
   const [repoInfo, setRepoInfo] = useState<{ owner: string; repo: string } | null>(null);
@@ -73,39 +79,50 @@ export default function WorkflowManager({
   const [usageStats, setUsageStats] = useState<any | null>(null);
   const [loadingUsage, setLoadingUsage] = useState(false);
   const [showUsage, setShowUsage] = useState(false);
+  const [isRechecking, setIsRechecking] = useState(false);
 
   // Initial Fetch Function
   const fetchStatus = useCallback(async () => {
-    if (!userId || !installationId) return;
+    if (!userId || !installationId || localRepoPermissionError) return;
     setLoadingStatus(true);
     const res = await getWorkflowStatus(userId);
     if (res.ok) {
       setWorkflowState(res.state);
       setWorkflowError(null);
     } else {
-      console.error(res.error);
-      setWorkflowError(res.error || "Failed to fetch workflow status");
+      if (res.error === "Action Required: Repository Permission Needed") {
+        setLocalRepoPermissionError(true);
+      } else {
+        console.error(res.error);
+        setWorkflowError(res.error || "Failed to fetch workflow status");
+      }
     }
     setLoadingStatus(false);
-  }, [userId, installationId]);
+  }, [userId, installationId, localRepoPermissionError]);
 
   const fetchRuns = useCallback(async (page: number) => {
-    if (!userId || !installationId) return;
+    if (!userId || !installationId || localRepoPermissionError) return;
     setLoadingRuns(true);
     const res = await listWorkflowRuns(userId, page, perPage);
     if (res.ok) {
       setRuns(res.runs);
       setTotalRuns(res.totalCount);
     } else {
-      toast.error(`Failed to load workflow runs: ${res.error}`);
+      if (res.error === "Action Required: Repository Permission Needed") {
+        setLocalRepoPermissionError(true);
+      } else {
+        toast.error(`Failed to load workflow runs: ${res.error}`);
+      }
     }
     setLoadingRuns(false);
-  }, [userId, installationId]);
+  }, [userId, installationId, localRepoPermissionError]);
 
   useEffect(() => {
     if (userId && installationId) {
-      void fetchStatus();
-      void fetchRuns(currentPage);
+      if (!localRepoPermissionError) {
+        void fetchStatus();
+        void fetchRuns(currentPage);
+      }
       // Fetch repository details for the manual setup flow
       void (async () => {
         const infoRes = await getRepoInfo(userId);
@@ -114,7 +131,7 @@ export default function WorkflowManager({
         }
       })();
     }
-  }, [userId, installationId, currentPage, fetchStatus, fetchRuns]);
+  }, [userId, installationId, currentPage, localRepoPermissionError, fetchStatus, fetchRuns]);
 
   // Actions
   const handleToggle = async () => {
@@ -193,8 +210,33 @@ export default function WorkflowManager({
     );
   }
 
-  if (repoPermissionError) {
-    const editUrl = `https://github.com/settings/installations/${installationId}`;
+  const handleRecheck = async () => {
+    if (!userId || !installationId) return;
+    setIsRechecking(true);
+    const toastId = toast.loading("Rechecking repository permissions...");
+    try {
+      const res = await verifyAndSaveInstallation(userId, installationId);
+      if (res.ok) {
+        if (res.matched) {
+          toast.success("Connection verified successfully!", { id: toastId });
+          window.location.reload();
+        } else {
+          toast.error("Required repository still not selected. Please ensure you select your forked repository on GitHub and try again.", { id: toastId });
+        }
+      } else {
+        toast.error(`Recheck failed: ${res.error}`, { id: toastId });
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`Error during recheck: ${msg}`, { id: toastId });
+    } finally {
+      setIsRechecking(false);
+    }
+  };
+
+  if (localRepoPermissionError) {
+    const githubAppName = process.env.NEXT_PUBLIC_GITHUB_APP_NAME || "dumpmail-app";
+    const editUrl = `https://github.com/apps/${githubAppName}/installations/new`;
     const forkedRepoName = repoInfo ? `${repoInfo.owner}/${repoInfo.repo}` : "your-forked-repo";
 
     return (
@@ -207,11 +249,29 @@ export default function WorkflowManager({
               The GitHub App was successfully installed, but it needs access to your forked repository: <span className="font-mono font-semibold text-foreground">{forkedRepoName}</span>.
             </p>
           </div>
-          <Button asChild size="sm" variant="destructive" className="h-8 text-[12px] font-semibold">
-            <a href={editUrl} target="_blank" rel="noopener noreferrer">
-              Configure App Permissions
-            </a>
-          </Button>
+          <div className="flex flex-col sm:flex-row gap-2 w-full justify-center">
+            <Button asChild size="sm" variant="outline" className="h-8 text-[12px] font-semibold border-destructive/40 hover:bg-destructive/10 hover:text-destructive">
+              <a href={editUrl} target="_blank" rel="noopener noreferrer">
+                Configure App Permissions
+              </a>
+            </Button>
+            <Button 
+              size="sm" 
+              variant="destructive" 
+              className="h-8 text-[12px] font-semibold"
+              onClick={handleRecheck}
+              disabled={isRechecking}
+            >
+              {isRechecking ? (
+                <>
+                  <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+                  Rechecking...
+                </>
+              ) : (
+                "Recheck Connection"
+              )}
+            </Button>
+          </div>
         </CardContent>
       </Card>
     );

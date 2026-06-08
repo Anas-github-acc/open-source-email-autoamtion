@@ -28,8 +28,8 @@ sequenceDiagram
     Note over FE: OAuth Token saved in short-lived secure cookie (10 min)
 
     Note over User, GH: 2. Automatic GitHub App Redirection
-    FE->>FE: Verify if github_installation_id metadata exists
-    Note over FE: If missing, redirect user to local /github/install instruction page
+    FE->>FE: Verify if valid github_installation_id, repository_id, and no permission_error exist
+    Note over FE: If missing/incomplete, redirect user to local /github/install instruction page
     FE->>FE: Wait 8s (show countdown & steps), start spinner at 8s, redirect to GitHub at 10s
     FE->>GH: Open App Installation page (Only select repositories -> select fork)
     GH-->>BE: Redirect to server GET /github/callback?installation_id=X
@@ -62,7 +62,7 @@ sequenceDiagram
 If the user fails to grant repository permission to their forked repository during the installation window:
 1. The server marks `github_repo_permission_error: true` in user metadata.
 2. The **Dashboard** renders a prominent red alert banner at the top of the outreach overview.
-3. The **WorkflowManager** blocks standard controls and displays a dedicated permission recovery card with a direct **Configure App Permissions** CTA pointing to `https://github.com/settings/installations/{installation_id}` where they can enable access to the fork.
+3. The **WorkflowManager** blocks standard controls and displays a dedicated permission recovery card with a direct **Configure App Permissions** CTA pointing to `https://github.com/apps/{githubAppName}/installations/new` where they can enable access to the fork (this universal link dynamically forwards users to their custom configuration page whether they are using a personal or organization account, preventing 404 errors).
 
 ---
 

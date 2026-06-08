@@ -115,7 +115,10 @@ async function getInstallationOwner(installationId: string): Promise<string> {
   return data.account.login;
 }
 
-async function getGitHubAppClient(supabaseUserId: string): Promise<{ token: string; owner: string }> {
+async function getGitHubAppClient(
+  supabaseUserId: string,
+  allowMissingRepo = false
+): Promise<{ token: string; owner: string; repo: string }> {
   if (!supabaseUserId) {
     throw new Error("No user ID provided");
   }
@@ -127,15 +130,89 @@ async function getGitHubAppClient(supabaseUserId: string): Promise<{ token: stri
   }
 
   const installationId = data.user.user_metadata?.github_installation_id;
+  const repositoryId = data.user.user_metadata?.github_repository_id;
+  let repoName = data.user.user_metadata?.github_repository_name;
+  let repoOwner = data.user.user_metadata?.github_repository_owner;
+  const permissionError = data.user.user_metadata?.github_repo_permission_error === true;
+
   if (!installationId) {
     throw new Error("GitHub Integration Needed please signin");
   }
 
-  const token = await getInstallationAccessToken(String(installationId));
-  const owner = await getInstallationOwner(String(installationId));
+  if (!allowMissingRepo && (!repositoryId || permissionError)) {
+    throw new Error("Action Required: Repository Permission Needed");
+  }
 
-  return { token, owner };
+  const token = await getInstallationAccessToken(String(installationId));
+
+  // If repoName or repoOwner is missing but repositoryId is present, resolve from GitHub
+  if (repositoryId && (!repoName || !repoOwner)) {
+    try {
+      const res = await fetch(`https://api.github.com/repositories/${repositoryId}`, {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          "User-Agent": "Dumpmail-App",
+        },
+        cache: "no-store",
+      });
+      if (res.ok) {
+        const repoDetail = await res.json();
+        repoName = repoDetail.name;
+        repoOwner = repoDetail.owner?.login;
+        // Cache in user metadata
+        const currentMeta = data.user.user_metadata || {};
+        await supabase.auth.admin.updateUserById(supabaseUserId, {
+          user_metadata: {
+            ...currentMeta,
+            github_repository_name: repoName,
+            github_repository_owner: repoOwner,
+          }
+        });
+      }
+    } catch (err) {
+      console.error("[getGitHubAppClient] Failed to resolve repository details by ID:", err);
+    }
+  }
+
+  // Fallbacks if not resolved
+  if (!repoName) {
+    repoName = SOURCE_REPO;
+  }
+  if (!repoOwner) {
+    repoOwner = await getInstallationOwner(String(installationId));
+  }
+
+  return { token, owner: repoOwner, repo: repoName };
 }
+
+/** Handles GitHub API errors and updates user metadata if a permission error occurs. Returns true if it was a permission error (403/404). */
+async function handleGitHubError(supabaseUserId: string, err: any): Promise<boolean> {
+  const status = err?.status || err?.response?.status;
+  if (status === 403 || status === 404) {
+    console.warn(`[handleGitHubError] GitHub API returned ${status}. Setting repo permission error flag.`);
+    try {
+      const supabase = createServerSupabase();
+      const { data: userData } = await supabase.auth.admin.getUserById(supabaseUserId);
+      if (userData?.user) {
+        const currentMeta = userData.user.user_metadata || {};
+        await supabase.auth.admin.updateUserById(supabaseUserId, {
+          user_metadata: {
+            ...currentMeta,
+            github_repo_permission_error: true,
+          }
+        });
+      }
+    } catch (dbErr) {
+      console.error("[handleGitHubError] Failed to update user metadata:", dbErr);
+    }
+    return true;
+  }
+  return false;
+}
+
 
 // ---------------------------------------------------------------------------
 // Types
@@ -428,18 +505,19 @@ export async function getWorkflowStatus(
   supabaseUserId: string,
 ): Promise<{ ok: true; state: string } | { ok: false; error: string }> {
   try {
-    const { token: githubToken, owner: login } = await getGitHubAppClient(supabaseUserId);
+    const { token: githubToken, owner: login, repo } = await getGitHubAppClient(supabaseUserId);
     const octokit = getOctokit(githubToken);
     const { data } = await octokit.rest.actions.getWorkflow({
       owner: login,
-      repo: SOURCE_REPO,
+      repo: repo,
       workflow_id: "schedule-send-mails.yml",
     });
     return { ok: true, state: data.state };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[getWorkflowStatus]", message);
-    return { ok: false, error: message };
+    const isPermissionError = await handleGitHubError(supabaseUserId, err);
+    return { ok: false, error: isPermissionError ? "Action Required: Repository Permission Needed" : message };
   }
 }
 
@@ -449,18 +527,18 @@ export async function toggleWorkflow(
   enable: boolean,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    const { token: githubToken, owner: login } = await getGitHubAppClient(supabaseUserId);
+    const { token: githubToken, owner: login, repo } = await getGitHubAppClient(supabaseUserId);
     const octokit = getOctokit(githubToken);
     if (enable) {
       await octokit.rest.actions.enableWorkflow({
         owner: login,
-        repo: SOURCE_REPO,
+        repo: repo,
         workflow_id: "schedule-send-mails.yml",
       });
     } else {
       await octokit.rest.actions.disableWorkflow({
         owner: login,
-        repo: SOURCE_REPO,
+        repo: repo,
         workflow_id: "schedule-send-mails.yml",
       });
     }
@@ -468,7 +546,8 @@ export async function toggleWorkflow(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[toggleWorkflow]", message);
-    return { ok: false, error: message };
+    const isPermissionError = await handleGitHubError(supabaseUserId, err);
+    return { ok: false, error: isPermissionError ? "Action Required: Repository Permission Needed" : message };
   }
 }
 
@@ -479,11 +558,11 @@ export async function listWorkflowRuns(
   perPage = 5,
 ): Promise<{ ok: true; runs: any[]; totalCount: number } | { ok: false; error: string }> {
   try {
-    const { token: githubToken, owner: login } = await getGitHubAppClient(supabaseUserId);
+    const { token: githubToken, owner: login, repo } = await getGitHubAppClient(supabaseUserId);
     const octokit = getOctokit(githubToken);
     const { data } = await octokit.rest.actions.listWorkflowRuns({
       owner: login,
-      repo: SOURCE_REPO,
+      repo: repo,
       workflow_id: "schedule-send-mails.yml",
       page,
       per_page: perPage,
@@ -496,7 +575,8 @@ export async function listWorkflowRuns(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[listWorkflowRuns]", message);
-    return { ok: false, error: message };
+    const isPermissionError = await handleGitHubError(supabaseUserId, err);
+    return { ok: false, error: isPermissionError ? "Action Required: Repository Permission Needed" : message };
   }
 }
 
@@ -506,18 +586,18 @@ export async function getWorkflowRunDetails(
   runId: number,
 ): Promise<{ ok: true; run: any; jobs: any[] } | { ok: false; error: string }> {
   try {
-    const { token: githubToken, owner: login } = await getGitHubAppClient(supabaseUserId);
+    const { token: githubToken, owner: login, repo } = await getGitHubAppClient(supabaseUserId);
     const octokit = getOctokit(githubToken);
     
     const [runRes, jobsRes] = await Promise.all([
       octokit.rest.actions.getWorkflowRun({
         owner: login,
-        repo: SOURCE_REPO,
+        repo: repo,
         run_id: runId,
       }),
       octokit.rest.actions.listJobsForWorkflowRun({
         owner: login,
-        repo: SOURCE_REPO,
+        repo: repo,
         run_id: runId,
       }),
     ]);
@@ -530,7 +610,8 @@ export async function getWorkflowRunDetails(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[getWorkflowRunDetails]", message);
-    return { ok: false, error: message };
+    const isPermissionError = await handleGitHubError(supabaseUserId, err);
+    return { ok: false, error: isPermissionError ? "Action Required: Repository Permission Needed" : message };
   }
 }
 
@@ -539,18 +620,19 @@ export async function getWorkflowUsageStats(
   supabaseUserId: string,
 ): Promise<{ ok: true; usage: any } | { ok: false; error: string }> {
   try {
-    const { token: githubToken, owner: login } = await getGitHubAppClient(supabaseUserId);
+    const { token: githubToken, owner: login, repo } = await getGitHubAppClient(supabaseUserId);
     const octokit = getOctokit(githubToken);
     const { data } = await octokit.rest.actions.getWorkflowUsage({
       owner: login,
-      repo: SOURCE_REPO,
+      repo: repo,
       workflow_id: "schedule-send-mails.yml",
     });
     return { ok: true, usage: data };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[getWorkflowUsageStats]", message);
-    return { ok: false, error: message };
+    const isPermissionError = await handleGitHubError(supabaseUserId, err);
+    return { ok: false, error: isPermissionError ? "Action Required: Repository Permission Needed" : message };
   }
 }
 
@@ -559,8 +641,8 @@ export async function getRepoInfo(
   supabaseUserId: string,
 ): Promise<{ ok: true; owner: string; repo: string } | { ok: false; error: string }> {
   try {
-    const { owner: login } = await getGitHubAppClient(supabaseUserId);
-    return { ok: true, owner: login, repo: SOURCE_REPO };
+    const { owner: login, repo } = await getGitHubAppClient(supabaseUserId, true);
+    return { ok: true, owner: login, repo };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[getRepoInfo]", message);
@@ -609,10 +691,22 @@ export async function verifyAndSaveInstallation(
     const upstreamFullName = `${SOURCE_OWNER}/${SOURCE_REPO}`.toLowerCase();
     let matchedRepo: any = null;
 
+    console.log("[verifyAndSaveInstallation] Starting repository verification.");
+    console.log(`[verifyAndSaveInstallation] Upstream repo: ${upstreamFullName}`);
+    console.log(`[verifyAndSaveInstallation] Selected repos in installation (${repositories.length}):`, repositories.map((r: any) => ({
+      full_name: r.full_name,
+      name: r.name,
+      fork: r.fork,
+      id: r.id
+    })));
+
     for (const repo of repositories) {
+      console.log(`[verifyAndSaveInstallation] Inspecting repository: ${repo.full_name} (fork: ${repo.fork})`);
       if (repo.fork === true) {
         // Retrieve full repository details to inspect "parent" and "source"
-        const repoDetailRes = await fetch(`https://api.github.com/repos/${repo.full_name}`, {
+        const repoDetailUrl = `https://api.github.com/repos/${repo.full_name}`;
+        console.log(`[verifyAndSaveInstallation] Fetching repository details from: ${repoDetailUrl}`);
+        const repoDetailRes = await fetch(repoDetailUrl, {
           method: "GET",
           headers: {
             "Authorization": `Bearer ${installationToken}`,
@@ -623,27 +717,57 @@ export async function verifyAndSaveInstallation(
           cache: "no-store",
         });
 
+        console.log(`[verifyAndSaveInstallation] Details response status: ${repoDetailRes.status}`);
         if (repoDetailRes.ok) {
           const fullRepo = await repoDetailRes.json();
           const parentName = fullRepo.parent?.full_name?.toLowerCase() || "";
           const sourceName = fullRepo.source?.full_name?.toLowerCase() || "";
+          console.log(`[verifyAndSaveInstallation] Repository: ${repo.full_name} | Parent: ${parentName} | Source: ${sourceName}`);
 
           if (parentName === upstreamFullName || sourceName === upstreamFullName) {
+            console.log(`[verifyAndSaveInstallation] Match found by parent/source check: ${repo.full_name}`);
             matchedRepo = repo;
             break;
+          } else {
+            console.log(`[verifyAndSaveInstallation] Parent/source did not match upstream.`);
           }
+        } else {
+          const errText = await repoDetailRes.text();
+          console.warn(`[verifyAndSaveInstallation] Failed to fetch details for ${repo.full_name}: ${repoDetailRes.status} - ${errText}`);
+        }
+      } else {
+        console.log(`[verifyAndSaveInstallation] Skipping non-fork repository during primary check: ${repo.full_name}`);
+      }
+    }
+
+    // Fallback: Check if any repository name matches the target SOURCE_REPO name
+    if (!matchedRepo) {
+      console.log(`[verifyAndSaveInstallation] No fork match found by parent/source. Trying fallback name match for: ${SOURCE_REPO}`);
+      for (const repo of repositories) {
+        if (repo.name?.toLowerCase() === SOURCE_REPO.toLowerCase()) {
+          console.log(`[verifyAndSaveInstallation] Match found by fallback name check: ${repo.full_name}`);
+          matchedRepo = repo;
+          break;
         }
       }
+    }
+
+    if (matchedRepo) {
+      console.log(`[verifyAndSaveInstallation] Successfully matched repository: ${matchedRepo.full_name} (ID: ${matchedRepo.id})`);
+    } else {
+      console.error("[verifyAndSaveInstallation] Verification failed. No matching repository found in installation.");
     }
 
     const supabase = createServerSupabase();
 
     if (matchedRepo) {
-      // Save repository_id alongside installation_id in database user metadata
+      // Save repository details alongside installation_id in database user metadata
       const { error } = await supabase.auth.admin.updateUserById(supabaseUserId, {
         user_metadata: {
           github_installation_id: installationId,
           github_repository_id: matchedRepo.id.toString(),
+          github_repository_name: matchedRepo.name,
+          github_repository_owner: matchedRepo.owner.login,
           github_repo_permission_error: false,
         }
       });

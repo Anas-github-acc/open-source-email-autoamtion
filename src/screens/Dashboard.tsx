@@ -57,7 +57,7 @@ export default async function Dashboard() {
               </div>
             </div>
             <a 
-              href={`https://github.com/settings/installations/${userMetadata?.github_installation_id}`}
+              href={`https://github.com/apps/${process.env.NEXT_PUBLIC_GITHUB_APP_NAME || "dumpmail-app"}/installations/new`}
               target="_blank"
               rel="noopener noreferrer"
               className="text-[12px] font-semibold text-destructive hover:underline flex-shrink-0"

@@ -109,7 +109,11 @@ export default function AuthCallback({
           setIsDone(true);
           await new Promise((r) => setTimeout(r, 1500));
           
-          const hasInstallation = session?.user?.user_metadata?.github_installation_id;
+          const userMetadata = session?.user?.user_metadata;
+          const hasInstallation = userMetadata?.github_installation_id && 
+                                  userMetadata?.github_repository_id && 
+                                  userMetadata?.github_repo_permission_error !== true;
+
           if (hasInstallation) {
             router.replace("/dashboard");
           } else {
