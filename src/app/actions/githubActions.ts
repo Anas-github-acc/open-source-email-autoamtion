@@ -4,6 +4,8 @@ import nacl from "tweetnacl";
 import naclUtil from "tweetnacl-util";
 import { blake2b } from "@noble/hashes/blake2.js";
 import { Octokit } from "octokit";
+import crypto from "crypto";
+import createServerSupabase from "@/integrations/supabase/server";
 
 const { decodeUTF8, decodeBase64, encodeBase64 } = naclUtil;
 
@@ -14,6 +16,125 @@ const SOURCE_OWNER = process.env.GITHUB_REPO_OWNER ?? "";
 const SOURCE_REPO = process.env.GITHUB_REPO_NAME ?? "";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SUPABASE_PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "";
+
+// ---------------------------------------------------------------------------
+// GitHub App Auth Helpers
+// ---------------------------------------------------------------------------
+
+function getPrivateKey(): string {
+  const rawKey = process.env.GITHUB_APP_PRIVATE_KEY || "";
+  if (!rawKey) return "";
+  if (rawKey.startsWith("LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQ")) {
+    return Buffer.from(rawKey, "base64").toString("utf-8");
+  }
+  if (rawKey.includes("-----BEGIN")) {
+    return rawKey.replace(/\\n/g, "\n");
+  }
+  return rawKey.replace(/\\n/g, "\n");
+}
+
+function generateGitHubAppJwt(): string {
+  const appId = process.env.GITHUB_APP_ID;
+  if (!appId) throw new Error("Missing GITHUB_APP_ID env var");
+  
+  const privateKey = getPrivateKey();
+  if (!privateKey) throw new Error("Missing GITHUB_APP_PRIVATE_KEY env var");
+
+  const header = { alg: "RS256", typ: "JWT" };
+  const now = Math.floor(Date.now() / 1000);
+  const payload = {
+    iat: now - 60,
+    exp: now + 540, // 9 minutes
+    iss: appId
+  };
+
+  const base64UrlEncode = (str: string) => {
+    return Buffer.from(str)
+      .toString("base64")
+      .replace(/=/g, "")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_");
+  };
+
+  const base64Header = base64UrlEncode(JSON.stringify(header));
+  const base64Payload = base64UrlEncode(JSON.stringify(payload));
+  const tokenInput = `${base64Header}.${base64Payload}`;
+
+  const signer = crypto.createSign("RSA-SHA256");
+  signer.update(tokenInput);
+  const signature = signer.sign(privateKey, "base64")
+    .replace(/=/g, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
+
+  return `${tokenInput}.${signature}`;
+}
+
+async function getInstallationAccessToken(installationId: string): Promise<string> {
+  const jwt = generateGitHubAppJwt();
+  const res = await fetch(`https://api.github.com/app/installations/${installationId}/access_tokens`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${jwt}`,
+      "Accept": "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": "Dumpmail-App",
+    },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Failed to generate installation token: ${res.status} - ${errorText}`);
+  }
+
+  const data = await res.json();
+  return data.token;
+}
+
+async function getInstallationOwner(installationId: string): Promise<string> {
+  const jwt = generateGitHubAppJwt();
+  const res = await fetch(`https://api.github.com/app/installations/${installationId}`, {
+    method: "GET",
+    headers: {
+      "Authorization": `Bearer ${jwt}`,
+      "Accept": "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": "Dumpmail-App",
+    },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Failed to fetch installation details: ${res.status} - ${errorText}`);
+  }
+
+  const data = await res.json();
+  return data.account.login;
+}
+
+async function getGitHubAppClient(supabaseUserId: string): Promise<{ token: string; owner: string }> {
+  if (!supabaseUserId) {
+    throw new Error("No user ID provided");
+  }
+
+  const supabase = createServerSupabase();
+  const { data, error } = await supabase.auth.admin.getUserById(supabaseUserId);
+  if (error || !data?.user) {
+    throw new Error(`Unable to fetch user from database: ${error?.message || "User not found"}`);
+  }
+
+  const installationId = data.user.user_metadata?.github_installation_id;
+  if (!installationId) {
+    throw new Error("GitHub Integration Needed please signin");
+  }
+
+  const token = await getInstallationAccessToken(String(installationId));
+  const owner = await getInstallationOwner(String(installationId));
+
+  return { token, owner };
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -303,11 +424,10 @@ export async function injectSecretsStep(
 
 /** Get the status of the scheduler workflow. */
 export async function getWorkflowStatus(
-  githubToken: string,
+  supabaseUserId: string,
 ): Promise<{ ok: true; state: string } | { ok: false; error: string }> {
   try {
-    if (!githubToken) throw new Error("No GitHub provider token available");
-    const login = await getGitHubLogin(githubToken);
+    const { token: githubToken, owner: login } = await getGitHubAppClient(supabaseUserId);
     const octokit = getOctokit(githubToken);
     const { data } = await octokit.rest.actions.getWorkflow({
       owner: login,
@@ -324,12 +444,11 @@ export async function getWorkflowStatus(
 
 /** Enable or disable the scheduler workflow. */
 export async function toggleWorkflow(
-  githubToken: string,
+  supabaseUserId: string,
   enable: boolean,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    if (!githubToken) throw new Error("No GitHub provider token available");
-    const login = await getGitHubLogin(githubToken);
+    const { token: githubToken, owner: login } = await getGitHubAppClient(supabaseUserId);
     const octokit = getOctokit(githubToken);
     if (enable) {
       await octokit.rest.actions.enableWorkflow({
@@ -354,13 +473,12 @@ export async function toggleWorkflow(
 
 /** List runs for the scheduler workflow with pagination. */
 export async function listWorkflowRuns(
-  githubToken: string,
+  supabaseUserId: string,
   page = 1,
   perPage = 5,
 ): Promise<{ ok: true; runs: any[]; totalCount: number } | { ok: false; error: string }> {
   try {
-    if (!githubToken) throw new Error("No GitHub provider token available");
-    const login = await getGitHubLogin(githubToken);
+    const { token: githubToken, owner: login } = await getGitHubAppClient(supabaseUserId);
     const octokit = getOctokit(githubToken);
     const { data } = await octokit.rest.actions.listWorkflowRuns({
       owner: login,
@@ -383,12 +501,11 @@ export async function listWorkflowRuns(
 
 /** Get details of a specific workflow run, including jobs and steps. */
 export async function getWorkflowRunDetails(
-  githubToken: string,
+  supabaseUserId: string,
   runId: number,
 ): Promise<{ ok: true; run: any; jobs: any[] } | { ok: false; error: string }> {
   try {
-    if (!githubToken) throw new Error("No GitHub provider token available");
-    const login = await getGitHubLogin(githubToken);
+    const { token: githubToken, owner: login } = await getGitHubAppClient(supabaseUserId);
     const octokit = getOctokit(githubToken);
     
     const [runRes, jobsRes] = await Promise.all([
@@ -418,11 +535,10 @@ export async function getWorkflowRunDetails(
 
 /** Get workflow billable usage statistics. */
 export async function getWorkflowUsageStats(
-  githubToken: string,
+  supabaseUserId: string,
 ): Promise<{ ok: true; usage: any } | { ok: false; error: string }> {
   try {
-    if (!githubToken) throw new Error("No GitHub provider token available");
-    const login = await getGitHubLogin(githubToken);
+    const { token: githubToken, owner: login } = await getGitHubAppClient(supabaseUserId);
     const octokit = getOctokit(githubToken);
     const { data } = await octokit.rest.actions.getWorkflowUsage({
       owner: login,
@@ -439,11 +555,10 @@ export async function getWorkflowUsageStats(
 
 /** Get the repository owner and name for the user's fork. */
 export async function getRepoInfo(
-  githubToken: string,
+  supabaseUserId: string,
 ): Promise<{ ok: true; owner: string; repo: string } | { ok: false; error: string }> {
   try {
-    if (!githubToken) throw new Error("No GitHub provider token available");
-    const login = await getGitHubLogin(githubToken);
+    const { owner: login } = await getGitHubAppClient(supabaseUserId);
     return { ok: true, owner: login, repo: SOURCE_REPO };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

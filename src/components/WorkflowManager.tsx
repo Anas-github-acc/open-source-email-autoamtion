@@ -37,8 +37,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { toast } from "sonner";
 
 export default function WorkflowManager() {
-  const { session } = useAuth();
-  const token = session?.provider_token ?? null;
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
+  const installationId = user?.user_metadata?.github_installation_id ?? null;
 
   // Workflow State
   const [workflowState, setWorkflowState] = useState<string | null>(null);
@@ -68,9 +69,9 @@ export default function WorkflowManager() {
 
   // Initial Fetch Function
   const fetchStatus = useCallback(async () => {
-    if (!token) return;
+    if (!userId || !installationId) return;
     setLoadingStatus(true);
-    const res = await getWorkflowStatus(token);
+    const res = await getWorkflowStatus(userId);
     if (res.ok) {
       setWorkflowState(res.state);
       setWorkflowError(null);
@@ -79,12 +80,12 @@ export default function WorkflowManager() {
       setWorkflowError(res.error || "Failed to fetch workflow status");
     }
     setLoadingStatus(false);
-  }, [token]);
+  }, [userId, installationId]);
 
   const fetchRuns = useCallback(async (page: number) => {
-    if (!token) return;
+    if (!userId || !installationId) return;
     setLoadingRuns(true);
-    const res = await listWorkflowRuns(token, page, perPage);
+    const res = await listWorkflowRuns(userId, page, perPage);
     if (res.ok) {
       setRuns(res.runs);
       setTotalRuns(res.totalCount);
@@ -92,28 +93,28 @@ export default function WorkflowManager() {
       toast.error(`Failed to load workflow runs: ${res.error}`);
     }
     setLoadingRuns(false);
-  }, [token]);
+  }, [userId, installationId]);
 
   useEffect(() => {
-    if (token) {
+    if (userId && installationId) {
       void fetchStatus();
       void fetchRuns(currentPage);
       // Fetch repository details for the manual setup flow
       void (async () => {
-        const infoRes = await getRepoInfo(token);
+        const infoRes = await getRepoInfo(userId);
         if (infoRes.ok) {
           setRepoInfo({ owner: infoRes.owner, repo: infoRes.repo });
         }
       })();
     }
-  }, [token, currentPage, fetchStatus, fetchRuns]);
+  }, [userId, installationId, currentPage, fetchStatus, fetchRuns]);
 
   // Actions
   const handleToggle = async () => {
-    if (!token || !workflowState) return;
+    if (!userId || !installationId || !workflowState) return;
     setIsToggling(true);
     const enable = workflowState !== "active";
-    const res = await toggleWorkflow(token, enable);
+    const res = await toggleWorkflow(userId, enable);
     if (res.ok) {
       setWorkflowState(enable ? "active" : "disabled_manually");
       toast.success(`Workflow has been ${enable ? "enabled" : "disabled"} successfully.`);
@@ -127,11 +128,11 @@ export default function WorkflowManager() {
   };
 
   const handleFetchDetails = async (runId: number) => {
-    if (!token) return;
+    if (!userId || !installationId) return;
     setSelectedRunId(runId);
     setLoadingDetails(true);
     setIsDetailsOpen(true);
-    const res = await getWorkflowRunDetails(token, runId);
+    const res = await getWorkflowRunDetails(userId, runId);
     if (res.ok) {
       setRunDetails({ run: res.run, jobs: res.jobs });
     } else {
@@ -142,9 +143,9 @@ export default function WorkflowManager() {
   };
 
   const handleFetchUsage = async () => {
-    if (!token) return;
+    if (!userId || !installationId) return;
     setLoadingUsage(true);
-    const res = await getWorkflowUsageStats(token);
+    const res = await getWorkflowUsageStats(userId);
     if (res.ok) {
       setUsageStats(res.usage);
       setShowUsage(true);
@@ -161,17 +162,25 @@ export default function WorkflowManager() {
     toast.success("Workflow information updated.");
   };
 
-  if (!token) {
+  if (!userId || !installationId) {
+    const githubAppName = process.env.NEXT_PUBLIC_GITHUB_APP_NAME || "dumpmail-app";
+    const installUrl = `https://github.com/apps/${githubAppName}/installations/new?state=${userId}`;
+
     return (
       <Card className="border border-border/60 bg-muted/20">
-        <CardContent className="pt-6 pb-6 flex flex-col items-center justify-center text-center space-y-3">
+        <CardContent className="pt-6 pb-6 flex flex-col items-center justify-center text-center space-y-4">
           <AlertCircle className="h-8 w-8 text-amber-500" />
           <div className="space-y-1">
-            <h3 className="text-sm font-semibold">GitHub Integration Needed</h3>
+            <h3 className="text-sm font-semibold">GitHub App Integration Needed</h3>
             <p className="text-[12px] text-muted-foreground max-w-sm">
-              Please sign out and sign in using your GitHub account to access workflow automation metrics and controls.
+              Please install the GitHub App to allow Dumpmail to manage, monitor, and configure your scheduler workflows securely.
             </p>
           </div>
+          <Button asChild size="sm" className="h-8 text-[12px]">
+            <a href={installUrl} target="_blank" rel="noopener noreferrer">
+              Install GitHub App
+            </a>
+          </Button>
         </CardContent>
       </Card>
     );
