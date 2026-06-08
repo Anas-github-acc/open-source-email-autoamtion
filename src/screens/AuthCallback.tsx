@@ -104,8 +104,16 @@ export default function AuthCallback({
 
         if (mountedRef.current) {
           setIsDone(true);
-          await new Promise((r) => setTimeout(r, 1800));
-          router.replace("/dashboard");
+          await new Promise((r) => setTimeout(r, 1500));
+          
+          const hasInstallation = session?.user?.user_metadata?.github_installation_id;
+          if (hasInstallation) {
+            router.replace("/dashboard");
+          } else {
+            const githubAppName = process.env.NEXT_PUBLIC_GITHUB_APP_NAME || "dumpmail-app";
+            const installUrl = `https://github.com/apps/${githubAppName}/installations/new?state=${user.id}`;
+            window.location.assign(installUrl);
+          }
         }
       } catch (err) {
         if (mountedRef.current) {
