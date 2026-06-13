@@ -120,13 +120,95 @@ export default function WorkflowManager({
 
   const extractStepLogs = (rawLogs: string, stepName: string, stepNumber: number): string => {
     const lines = rawLogs.split(/\r?\n/);
-    let stepLogsList: string[] = [];
-    let isCapturing = false;
 
     const cleanLine = (line: string) => {
       const zIndex = line.indexOf("Z ");
       return zIndex !== -1 ? line.substring(zIndex + 2) : line;
     };
+
+    // Find indices for main container workflow milestones
+    let initializeContainersStartIdx = -1;
+    let runJobStartIdx = -1;
+    let stopContainersStartIdx = -1;
+    let completeJobStartIdx = -1;
+
+    for (let i = 0; i < lines.length; i++) {
+      const content = cleanLine(lines[i]);
+
+      if (
+        initializeContainersStartIdx === -1 &&
+        (content.includes("##[group]Checking docker version") || content.includes("Starting job container"))
+      ) {
+        initializeContainersStartIdx = i;
+      }
+
+      if (
+        runJobStartIdx === -1 &&
+        (content.includes("##[group]Run node --use-system-ca") ||
+          content.includes("node --use-system-ca /app/app/scripts/runJob.js"))
+      ) {
+        runJobStartIdx = i;
+      }
+
+      if (
+        stopContainersStartIdx === -1 &&
+        (content.includes("Stop and remove container:") ||
+          content.includes("Stop container") ||
+          content.includes("/usr/bin/docker rm"))
+      ) {
+        stopContainersStartIdx = i;
+      }
+
+      if (
+        completeJobStartIdx === -1 &&
+        (content.includes("Cleaning up orphan processes") || content.includes("Post job cleanup"))
+      ) {
+        completeJobStartIdx = i;
+      }
+    }
+
+    // If we didn't find the specific milestones but have general "Run job" step, try general check
+    if (runJobStartIdx === -1) {
+      for (let i = 0; i < lines.length; i++) {
+        const content = cleanLine(lines[i]);
+        if (content.includes("##[group]Run ")) {
+          runJobStartIdx = i;
+          break;
+        }
+      }
+    }
+
+    const normalizedName = stepName.toLowerCase().trim();
+
+    let startIdx = -1;
+    let endIdx = lines.length;
+
+    if (normalizedName === "set up job") {
+      startIdx = 0;
+      endIdx = initializeContainersStartIdx !== -1 ? initializeContainersStartIdx : lines.length;
+    } else if (normalizedName === "initialize containers") {
+      startIdx = initializeContainersStartIdx !== -1 ? initializeContainersStartIdx : 0;
+      endIdx = runJobStartIdx !== -1 ? runJobStartIdx : lines.length;
+    } else if (normalizedName === "run job" || normalizedName.includes("runjob.js") || normalizedName.includes("run job")) {
+      startIdx = runJobStartIdx !== -1 ? runJobStartIdx : 0;
+      endIdx = stopContainersStartIdx !== -1 ? stopContainersStartIdx : lines.length;
+    } else if (normalizedName === "stop containers") {
+      startIdx = stopContainersStartIdx !== -1 ? stopContainersStartIdx : 0;
+      endIdx = completeJobStartIdx !== -1 ? completeJobStartIdx : lines.length;
+    } else if (normalizedName === "complete job") {
+      startIdx = completeJobStartIdx !== -1 ? completeJobStartIdx : 0;
+      endIdx = lines.length;
+    }
+
+    // If milestone-based indices were matched successfully, slice the lines
+    if (startIdx !== -1) {
+      const stepLines = lines.slice(startIdx, endIdx);
+      return stepLines.map((line) => cleanLine(line)).join("\n");
+    }
+
+    // --- FALLBACK 1: Name-based group boundary extraction ---
+    let stepLogsList: string[] = [];
+    let isCapturing = false;
 
     const isStepHeader = (line: string) => {
       const content = cleanLine(line);
@@ -137,7 +219,6 @@ export default function WorkflowManager({
       return headerName.includes(targetName) || targetName.includes(headerName);
     };
 
-    // First pass: name matching
     for (const line of lines) {
       if (isStepHeader(line)) {
         isCapturing = true;
@@ -157,39 +238,42 @@ export default function WorkflowManager({
       }
     }
 
-    // Second pass: fallback to step index
-    if (stepLogsList.length === 0) {
-      let groupIndex = 0;
-      for (const line of lines) {
-        const content = cleanLine(line);
-        if (content.includes("##[group]") || content.includes("::group::")) {
-          groupIndex++;
-          if (groupIndex === stepNumber) {
-            isCapturing = true;
-            continue;
-          } else if (isCapturing) {
-            break;
-          }
+    if (stepLogsList.length > 0) {
+      return stepLogsList.join("\n");
+    }
+
+    // --- FALLBACK 2: Log group index extraction ---
+    let groupIndex = 0;
+    isCapturing = false;
+    for (const line of lines) {
+      const content = cleanLine(line);
+      if (content.includes("##[group]") || content.includes("::group::")) {
+        groupIndex++;
+        if (groupIndex === stepNumber) {
+          isCapturing = true;
+          continue;
+        } else if (isCapturing) {
+          break;
         }
-        if (isCapturing) {
-          if (
-            content.startsWith("##[endgroup]") ||
-            content.startsWith("::endgroup::") ||
-            content.startsWith("##[group]") ||
-            content.startsWith("::group::")
-          ) {
-            break;
-          }
-          stepLogsList.push(content);
+      }
+      if (isCapturing) {
+        if (
+          content.startsWith("##[endgroup]") ||
+          content.startsWith("::endgroup::") ||
+          content.startsWith("##[group]") ||
+          content.startsWith("::group::")
+        ) {
+          break;
         }
+        stepLogsList.push(content);
       }
     }
 
-    if (stepLogsList.length === 0) {
-      return "No logs found for this specific step.";
+    if (stepLogsList.length > 0) {
+      return stepLogsList.join("\n");
     }
 
-    return stepLogsList.join("\n");
+    return "No logs found for this specific step.";
   };
 
   const handleStepClick = async (jobId: number, stepName: string, stepNumber: number) => {
