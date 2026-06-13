@@ -10,6 +10,7 @@ import {
   getWorkflowUsageStats,
   getRepoInfo,
   verifyAndSaveInstallation,
+  getJobLogs,
 } from "@/app/actions/githubActions";
 import {
   Play,
@@ -80,6 +81,143 @@ export default function WorkflowManager({
   const [loadingUsage, setLoadingUsage] = useState(false);
   const [showUsage, setShowUsage] = useState(false);
   const [isRechecking, setIsRechecking] = useState(false);
+
+  // Step Logs State
+  const [expandedStepKey, setExpandedStepKey] = useState<string | null>(null); // "jobId-stepNumber"
+  const [jobLogs, setJobLogs] = useState<Record<number, string>>({}); // { jobId: "raw logs" }
+  const [stepLogs, setStepLogs] = useState<Record<string, string>>({}); // { "jobId-stepNumber": "log text" }
+  const [loadingStepLogs, setLoadingStepLogs] = useState<Record<string, boolean>>({}); // { "jobId-stepNumber": true/false }
+
+  const isToday = (dateString: string | undefined | null) => {
+    if (!dateString) return false;
+    const date = new Date(dateString);
+    const today = new Date();
+    return (
+      date.getDate() === today.getDate() &&
+      date.getMonth() === today.getMonth() &&
+      date.getFullYear() === today.getFullYear()
+    );
+  };
+
+  const formatRunDate = (dateString: string | undefined | null) => {
+    if (!dateString) return "";
+    const date = new Date(dateString);
+    const day = date.getDate();
+    const months = [
+      "january", "february", "march", "april", "may", "june",
+      "july", "august", "september", "october", "november", "december"
+    ];
+    const month = months[date.getMonth()];
+    const year = date.getFullYear();
+    
+    const time = date.toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+    return `${day} ${month} ${year}, ${time}`;
+  };
+
+  const extractStepLogs = (rawLogs: string, stepName: string, stepNumber: number): string => {
+    const lines = rawLogs.split(/\r?\n/);
+    let stepLogsList: string[] = [];
+    let isCapturing = false;
+
+    const cleanLine = (line: string) => {
+      const zIndex = line.indexOf("Z ");
+      return zIndex !== -1 ? line.substring(zIndex + 2) : line;
+    };
+
+    const isStepHeader = (line: string) => {
+      const content = cleanLine(line);
+      const match = content.match(/##\[group\](.*)/i) || content.match(/::group::(.*)/i);
+      if (!match) return false;
+      const headerName = match[1].toLowerCase().trim();
+      const targetName = stepName.toLowerCase().trim();
+      return headerName.includes(targetName) || targetName.includes(headerName);
+    };
+
+    // First pass: name matching
+    for (const line of lines) {
+      if (isStepHeader(line)) {
+        isCapturing = true;
+        continue;
+      }
+      if (isCapturing) {
+        const content = cleanLine(line);
+        if (
+          content.startsWith("##[group]") ||
+          content.startsWith("::group::") ||
+          content.startsWith("##[endgroup]") ||
+          content.startsWith("::endgroup::")
+        ) {
+          break;
+        }
+        stepLogsList.push(content);
+      }
+    }
+
+    // Second pass: fallback to step index
+    if (stepLogsList.length === 0) {
+      let groupIndex = 0;
+      for (const line of lines) {
+        const content = cleanLine(line);
+        if (content.includes("##[group]") || content.includes("::group::")) {
+          groupIndex++;
+          if (groupIndex === stepNumber) {
+            isCapturing = true;
+            continue;
+          } else if (isCapturing) {
+            break;
+          }
+        }
+        if (isCapturing) {
+          if (
+            content.startsWith("##[endgroup]") ||
+            content.startsWith("::endgroup::") ||
+            content.startsWith("##[group]") ||
+            content.startsWith("::group::")
+          ) {
+            break;
+          }
+          stepLogsList.push(content);
+        }
+      }
+    }
+
+    if (stepLogsList.length === 0) {
+      return "No logs found for this specific step.";
+    }
+
+    return stepLogsList.join("\n");
+  };
+
+  const handleStepClick = async (jobId: number, stepName: string, stepNumber: number) => {
+    const key = `${jobId}-${stepNumber}`;
+    if (expandedStepKey === key) {
+      setExpandedStepKey(null);
+      return;
+    }
+    setExpandedStepKey(key);
+
+    let rawLogs = jobLogs[jobId];
+    if (!rawLogs) {
+      setLoadingStepLogs((prev) => ({ ...prev, [key]: true }));
+      const res = await getJobLogs(userId, jobId);
+      if (res.ok) {
+        rawLogs = res.logs;
+        setJobLogs((prev) => ({ ...prev, [jobId]: rawLogs }));
+      } else {
+        setStepLogs((prev) => ({ ...prev, [key]: `Error fetching logs: ${res.error}` }));
+        setLoadingStepLogs((prev) => ({ ...prev, [key]: false }));
+        return;
+      }
+    }
+
+    const extracted = extractStepLogs(rawLogs, stepName, stepNumber);
+    setStepLogs((prev) => ({ ...prev, [key]: extracted }));
+    setLoadingStepLogs((prev) => ({ ...prev, [key]: false }));
+  };
 
   // Initial Fetch Function
   const fetchStatus = useCallback(async () => {
@@ -374,7 +512,7 @@ export default function WorkflowManager({
                 variant="outline"
                 size="sm"
                 onClick={handleRefreshAll}
-                className="h-8 px-2.5 text-muted-foreground hover:text-foreground border-border/60"
+                className="h-8 px-2.5 text-muted-foreground hover:text-foreground hover:bg-secondary border-border"
               >
                 <RefreshCw className="h-3.5 w-3.5" />
               </Button>
@@ -384,7 +522,7 @@ export default function WorkflowManager({
                 size="sm"
                 onClick={handleFetchUsage}
                 disabled={loadingUsage}
-                className="h-8 gap-1.5 text-[12px] border-border/60 hover:bg-secondary/40"
+                className="h-8 gap-1.5 text-[12px] text-muted-foreground hover:text-foreground hover:bg-secondary border-border"
               >
                 {loadingUsage ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -498,51 +636,66 @@ export default function WorkflowManager({
                 </p>
               </div>
             ) : (
-              runs.map((run) => (
-                <div
-                  key={run.id}
-                  onClick={() => handleFetchDetails(run.id)}
-                  className="flex items-center justify-between p-4 hover:bg-muted/30 cursor-pointer transition-colors group"
-                >
-                  <div className="flex items-start gap-3 min-w-0">
-                    <div className="mt-0.5 flex-shrink-0">
-                      {getStatusIcon(run.status, run.conclusion)}
-                    </div>
-
-                    <div className="space-y-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[13px] font-semibold text-foreground group-hover:underline">
-                          {run.display_title || `Run #${run.run_number}`}
-                        </span>
-                        <Badge
-                          variant="outline"
-                          className={`text-[9px] px-1.5 py-0.2 border capitalize ${getStatusColorClass(
-                            run.status,
-                            run.conclusion
-                          )}`}
-                        >
-                          {run.status === "completed" ? run.conclusion : run.status}
-                        </Badge>
+              runs.map((run) => {
+                const isRunToday = isToday(run.run_started_at);
+                return (
+                  <div
+                    key={run.id}
+                    onClick={() => handleFetchDetails(run.id)}
+                    className={`flex items-center justify-between p-4 hover:bg-muted/30 cursor-pointer transition-colors group ${
+                      isRunToday
+                        ? "bg-emerald-500/[0.04] dark:bg-emerald-500/[0.06] border-l-4 border-l-emerald-500 pl-3"
+                        : ""
+                    }`}
+                  >
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className="mt-0.5 flex-shrink-0">
+                        {getStatusIcon(run.status, run.conclusion)}
                       </div>
 
-                      <div className="flex items-center gap-3 text-[11px] text-muted-foreground flex-wrap">
-                        <span className="flex items-center gap-1">
-                          <GitBranch className="h-3 w-3" />
-                          {run.head_branch}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          {run.run_started_at ? new Date(run.run_started_at).toLocaleString() : ""}
-                        </span>
+                      <div className="space-y-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[13px] font-semibold text-foreground group-hover:underline">
+                            {run.display_title || `Run #${run.run_number}`}
+                          </span>
+                          <Badge
+                            variant="outline"
+                            className={`text-[9px] px-1.5 py-0.2 border capitalize ${getStatusColorClass(
+                              run.status,
+                              run.conclusion
+                            )}`}
+                          >
+                            {run.status === "completed" ? run.conclusion : run.status}
+                          </Badge>
+                          {isRunToday && (
+                            <Badge
+                              variant="outline"
+                              className="text-[9px] px-1.5 py-0.2 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 font-medium"
+                            >
+                              Today
+                            </Badge>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-3 text-[11px] text-muted-foreground flex-wrap">
+                          <span className="flex items-center gap-1">
+                            <GitBranch className="h-3 w-3" />
+                            {run.head_branch}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {run.run_started_at ? formatRunDate(run.run_started_at) : ""}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="flex items-center gap-2 pl-4">
-                    <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-transform group-hover:translate-x-0.5 duration-200" />
+                    <div className="flex items-center gap-2 pl-4">
+                      <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-transform group-hover:translate-x-0.5 duration-200" />
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
 
@@ -637,20 +790,49 @@ export default function WorkflowManager({
                     {/* Step Details */}
                     <div className="divide-y divide-border/40">
                       {job.steps && job.steps.length > 0 ? (
-                        job.steps.map((step: any) => (
-                          <div key={step.number} className="px-4 py-2.5 flex items-center justify-between hover:bg-muted/10">
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              {getStatusIcon(step.status, step.conclusion)}
-                              <span className="text-[12px] font-medium text-foreground truncate">{step.name}</span>
-                            </div>
+                        job.steps.map((step: any) => {
+                          const key = `${job.id}-${step.number}`;
+                          const isExpanded = expandedStepKey === key;
+                          return (
+                            <div key={step.number} className="flex flex-col border-b border-border/40 last:border-b-0">
+                              <div
+                                onClick={() => handleStepClick(job.id, step.name, step.number)}
+                                className="px-4 py-2.5 flex items-center justify-between hover:bg-muted/10 cursor-pointer select-none"
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  {getStatusIcon(step.status, step.conclusion)}
+                                  <span className="text-[12px] font-medium text-foreground truncate">{step.name}</span>
+                                </div>
 
-                            <span className="text-[11px] font-mono text-muted-foreground">
-                              {step.started_at && step.completed_at
-                                ? formatDuration(new Date(step.completed_at).getTime() - new Date(step.started_at).getTime())
-                                : "—"}
-                            </span>
-                          </div>
-                        ))
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[11px] font-mono text-muted-foreground">
+                                    {step.started_at && step.completed_at
+                                      ? formatDuration(new Date(step.completed_at).getTime() - new Date(step.started_at).getTime())
+                                      : "—"}
+                                  </span>
+                                  {isExpanded ? (
+                                    <ChevronRight className="h-3.5 w-3.5 rotate-90 transition-transform text-muted-foreground" />
+                                  ) : (
+                                    <ChevronRight className="h-3.5 w-3.5 transition-transform text-muted-foreground" />
+                                  )}
+                                </div>
+                              </div>
+
+                              {isExpanded && (
+                                <div className="bg-zinc-950 text-zinc-300 px-4 py-3 font-mono text-[11px] border-t border-zinc-800 max-h-64 overflow-y-auto whitespace-pre-wrap select-text leading-relaxed">
+                                  {loadingStepLogs[key] ? (
+                                    <div className="flex items-center gap-2 py-2 text-zinc-500">
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-500" />
+                                      <span>Streaming logs from GitHub...</span>
+                                    </div>
+                                  ) : (
+                                    stepLogs[key] || "No logs available for this step."
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
                       ) : (
                         <div className="px-4 py-3 text-center text-xs text-muted-foreground">
                           No steps executed for this job.

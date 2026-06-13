@@ -891,3 +891,61 @@ export async function verifyAndSaveInstallation(
   }
 }
 
+/** Get logs for a specific workflow job. */
+export async function getJobLogs(
+  supabaseUserId: string,
+  jobId: number,
+): Promise<{ ok: true; logs: string } | { ok: false; error: string }> {
+  try {
+    const { token: githubToken, owner: login, repo } = await getGitHubAppClient(supabaseUserId);
+    
+    // GitHub API endpoint to get job logs.
+    const url = `https://api.github.com/repos/${login}/${repo}/actions/jobs/${jobId}/logs`;
+    
+    // We set redirect: "manual" to prevent forwarding Authorization headers to AWS S3.
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${githubToken}`,
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "Dumpmail-App",
+      },
+      redirect: "manual",
+      cache: "no-store",
+    });
+
+    let logUrl = "";
+    if (res.status === 302 || res.status === 307 || res.status === 301) {
+      logUrl = res.headers.get("location") || "";
+    }
+
+    if (!logUrl) {
+      if (res.ok) {
+        const logs = await res.text();
+        return { ok: true, logs };
+      }
+      const errorText = await res.text();
+      return { ok: false, error: `Failed to fetch logs: ${res.status} - ${errorText}` };
+    }
+
+    // Fetch the logs from S3/redirect URL without Auth header
+    const logRes = await fetch(logUrl, {
+      method: "GET",
+      cache: "no-store",
+    });
+
+    if (!logRes.ok) {
+      return { ok: false, error: `Failed to download log content: ${logRes.status}` };
+    }
+
+    const logs = await logRes.text();
+    return { ok: true, logs };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[getJobLogs]", message);
+    return { ok: false, error: message };
+  }
+}
+
+
