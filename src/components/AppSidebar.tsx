@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { LayoutDashboard, Users, FileText, Send, Mailbox, Activity, Settings, LogOut } from "lucide-react";
 import { StackedLogo } from "./StackedLogo";
 import Link from "next/link";
@@ -25,6 +26,19 @@ export function SidebarContent({ collapsed = false, onNavigate }: { collapsed?: 
   const { profile, signOut } = useAuth();
   const currentPathname = pathname ?? "/";
 
+  const [leadsPath, setLeadsPath] = useState("/leads");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("dumpmail_last_selected_campaign_id");
+      if (stored) {
+        setLeadsPath(`/leads?campaign=${stored}`);
+      } else {
+        setLeadsPath("/leads");
+      }
+    }
+  }, [pathname]);
+
   const initials = profile?.name
     ? profile.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)
     : "U";
@@ -44,10 +58,11 @@ export function SidebarContent({ collapsed = false, onNavigate }: { collapsed?: 
         {navItems.map((item) => {
           const isActive = currentPathname === item.path ||
             (item.path !== "/" && currentPathname.startsWith(item.path));
+          const path = item.path === "/leads" ? leadsPath : item.path;
           return (
             <Link
               key={item.path}
-              href={item.path}
+              href={path}
               onClick={onNavigate}
               className={cn(
                 "flex items-center gap-2 px-2 py-1.5 rounded text-[13px] transition-colors",

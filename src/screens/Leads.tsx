@@ -244,30 +244,12 @@ export default function Leads({
     setCurrentPage(1);
   }, [campaignIdFromUrl]);
 
-  // Sync URL campaign param with localStorage and set default if missing
   useEffect(() => {
-    if (typeof window !== "undefined" && campaigns.length > 0) {
-      if (!campaignIdFromUrl) {
-        // Try restoring last selected campaign
-        const stored = localStorage.getItem("dumpmail_last_selected_campaign_id");
-        if (stored && campaigns.some((c) => c.id === stored)) {
-          startTransition(() => {
-            router.replace(`?campaign=${stored}`);
-          });
-        } else {
-          // If no stored campaign or it's invalid, default to the first campaign in the list
-          const defaultCid = campaigns[0].id;
-          localStorage.setItem("dumpmail_last_selected_campaign_id", defaultCid);
-          startTransition(() => {
-            router.replace(`?campaign=${defaultCid}`);
-          });
-        }
-      } else {
-        // Save the current URL campaign as the last selected campaign
-        localStorage.setItem("dumpmail_last_selected_campaign_id", campaignIdFromUrl);
-      }
+    if (typeof window !== "undefined" && campaignIdFromUrl) {
+      localStorage.setItem("dumpmail_last_selected_campaign_id", campaignIdFromUrl);
     }
-  }, [campaigns, campaignIdFromUrl, router]);
+  }, [campaignIdFromUrl]);
+
 
   /* ── Campaign Lead Batching / Debounce States ── */
   type PendingLeadItem = {
