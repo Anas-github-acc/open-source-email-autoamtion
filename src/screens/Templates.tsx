@@ -1272,30 +1272,19 @@ export default function Templates({
             <div className="rounded-xl border border-border bg-card p-6 shadow-md space-y-5">
               {renderVariablesAccordion(createVariables, setCreateVariables, "create")}
 
-              <div className="flex border-b border-border">
+              <div className="border border-border rounded-lg overflow-hidden bg-secondary/5 mb-4">
                 <button
                   type="button"
-                  onClick={() => setActiveTab("edit")}
-                  className={cn(
-                    "px-4 py-2 text-[13px] font-medium border-b-2 -mb-[2px] transition-colors",
-                    activeTab === "edit"
-                      ? "border-primary text-foreground"
-                      : "border-transparent text-muted-foreground hover:text-foreground"
-                  )}
+                  onClick={() => setActiveTab(activeTab === "edit" ? "preview" : "edit")}
+                  className="w-full flex items-center justify-between px-4 py-3 bg-secondary/10 hover:bg-secondary/20 transition-colors text-[13px] font-medium text-foreground"
                 >
-                  Edit Template
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("preview")}
-                  className={cn(
-                    "px-4 py-2 text-[13px] font-medium border-b-2 -mb-[2px] transition-colors",
-                    activeTab === "preview"
-                      ? "border-primary text-foreground"
-                      : "border-transparent text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  Live Preview
+                  <span className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    {activeTab === "edit" ? "Template - Edit Mode" : "Template - Live Preview"}
+                  </span>
+                  <span className="text-[11px] text-primary font-medium hover:underline">
+                    {activeTab === "edit" ? "Switch to Live Preview" : "Switch to Editor"}
+                  </span>
                 </button>
               </div>
 
@@ -1373,30 +1362,19 @@ export default function Templates({
             <div className="rounded-xl border border-border bg-card p-6 shadow-md space-y-5">
               {renderVariablesAccordion(editVariables, setEditVariables, "edit")}
 
-              <div className="flex border-b border-border">
+              <div className="border border-border rounded-lg overflow-hidden bg-secondary/5 mb-4">
                 <button
                   type="button"
-                  onClick={() => setActiveTab("edit")}
-                  className={cn(
-                    "px-4 py-2 text-[13px] font-medium border-b-2 -mb-[2px] transition-colors",
-                    activeTab === "edit"
-                      ? "border-primary text-foreground"
-                      : "border-transparent text-muted-foreground hover:text-foreground"
-                  )}
+                  onClick={() => setActiveTab(activeTab === "edit" ? "preview" : "edit")}
+                  className="w-full flex items-center justify-between px-4 py-3 bg-secondary/10 hover:bg-secondary/20 transition-colors text-[13px] font-medium text-foreground"
                 >
-                  Edit Template
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("preview")}
-                  className={cn(
-                    "px-4 py-2 text-[13px] font-medium border-b-2 -mb-[2px] transition-colors",
-                    activeTab === "preview"
-                      ? "border-primary text-foreground"
-                      : "border-transparent text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  Live Preview
+                  <span className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    {activeTab === "edit" ? "Template - Edit Mode" : "Template - Live Preview"}
+                  </span>
+                  <span className="text-[11px] text-primary font-medium hover:underline">
+                    {activeTab === "edit" ? "Switch to Live Preview" : "Switch to Editor"}
+                  </span>
                 </button>
               </div>
 
