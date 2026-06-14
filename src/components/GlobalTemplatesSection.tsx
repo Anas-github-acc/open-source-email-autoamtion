@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import {
   Globe, Eye, Plus, Loader2, ArrowRight, Sparkles, Mail,
@@ -51,6 +52,25 @@ function AddCountBadge({ count }: { count: number }) {
 }
 
 // ─── Template Preview Modal ───────────────────────────────────────────────────
+function extractVariables(text: string): string[] {
+  const regex = /\{\{([^}]+)\}\}/g;
+  const matches = new Set<string>();
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    matches.add(match[1].trim());
+  }
+  return Array.from(matches);
+}
+
+function compileTemplate(text: string, values: Record<string, string>) {
+  if (!text) return "";
+  return text.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
+    const k = key.trim();
+    if (k in values) return values[k] || match; // Keep placeholder if blank
+    return match;
+  });
+}
+
 function TemplatePreviewModal({
   template,
   open,
@@ -68,8 +88,40 @@ function TemplatePreviewModal({
   alreadyAdded: Set<string>;
   addCount: number;
 }) {
+  const [customVars, setCustomVars] = useState<string[]>([]);
+  const [customValues, setCustomValues] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (template && open) {
+      const textVars = extractVariables(template.subject + "\n" + (template.body_text || ""));
+      const jsonVars = template.variables ? Object.keys(template.variables as Record<string, string>) : [];
+      const allVars = Array.from(new Set([...textVars, ...jsonVars]));
+
+      const exclude = ["lead", "company", "role", "signature", "name"];
+      const filtered = allVars.filter((v) => !exclude.includes(v.toLowerCase()));
+
+      setCustomVars(filtered);
+      setCustomValues(Object.fromEntries(filtered.map((v) => [v, ""])));
+    } else {
+      setCustomVars([]);
+      setCustomValues({});
+    }
+  }, [template, open]);
+
   if (!template) return null;
   const added = alreadyAdded.has(template.id);
+
+  const previewValues = {
+    lead: "Alex Smith",
+    company: "Innovate LLC",
+    role: "Director of Product",
+    name: "[Your Name]",
+    signature: "[Your Signature]",
+    ...customValues,
+  };
+
+  const compiledSubject = compileTemplate(template.subject, previewValues);
+  const compiledBody = compileTemplate(template.body_text || "", previewValues);
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -127,12 +179,36 @@ function TemplatePreviewModal({
             )}
           </div>
 
+          {/* User-defined variables on the spot editor */}
+          {customVars.length > 0 && (
+            <div className="rounded-xl border border-border/60 bg-secondary/20 p-4 space-y-3">
+              <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                Interactive Variables (Type to preview)
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {customVars.map((v) => (
+                  <div key={v} className="space-y-1.5">
+                    <label className="text-[11px] font-medium text-muted-foreground">
+                      <span className="font-mono text-primary font-semibold">{`{{${v}}}`}</span>
+                    </label>
+                    <Input
+                      placeholder={`Enter value for ${v}`}
+                      className="h-8 text-[12px]"
+                      value={customValues[v] || ""}
+                      onChange={(e) => setCustomValues((prev) => ({ ...prev, [v]: e.target.value }))}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Subject line preview */}
           <div className="rounded-xl border border-border/60 bg-secondary/30 p-4 space-y-2">
             <div className="flex items-center gap-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
               <Mail className="h-3 w-3" /> Subject Line
             </div>
-            <p className="text-[14px] font-medium text-foreground">{template.subject}</p>
+            <p className="text-[14px] font-medium text-foreground">{compiledSubject}</p>
           </div>
 
           {/* Body preview */}
@@ -143,7 +219,7 @@ function TemplatePreviewModal({
               </div>
               <div className="max-h-48 overflow-y-auto">
                 <p className="text-[13px] text-foreground/80 leading-relaxed whitespace-pre-wrap font-mono">
-                  {template.body_text}
+                  {compiledBody}
                 </p>
               </div>
             </div>

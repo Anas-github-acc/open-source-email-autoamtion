@@ -88,6 +88,7 @@ class FakeSupabaseQuery {
       email: this.pendingUpsert.email,
       id: this.pendingUpsert.id,
       name: this.pendingUpsert.name ?? null,
+      email_template_variables: null,
     };
     this.rows[row.id] = row;
 
@@ -145,6 +146,7 @@ test("ensurePublicUserForClient returns an existing public user without touching
     email: "person@example.com",
     name: "Existing User",
     created_at: "2026-05-25T00:00:00.000Z",
+    email_template_variables: null,
   };
   const { calls, fakeClient } = createFakeSupabase(
     { id: existingUser.id, email: existingUser.email, user_metadata: { full_name: "Auth Name" } },
@@ -186,6 +188,7 @@ test("ensurePublicUserForClient merges an old email-matched public user into the
     email: "same@example.com",
     name: "Old Person",
     created_at: "2026-05-20T00:00:00.000Z",
+    email_template_variables: null,
   };
   const authUser = {
     id: "auth-user-2",

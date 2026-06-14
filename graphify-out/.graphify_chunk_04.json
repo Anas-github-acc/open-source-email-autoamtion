@@ -1,0 +1,62 @@
+{
+  "nodes": [
+    {
+      "id": "public_template_card_bg_main",
+      "label": "SaaS Template Card Background",
+      "file_type": "image",
+      "source_file": "public/template-card-bg.png",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "public_template_card_bg_saas_mockup",
+      "label": "SaaS Website Mockup Design",
+      "file_type": "concept",
+      "source_file": "public/template-card-bg.png",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "public_template_card_bg_constellation_graphic",
+      "label": "Constellation / Network Nodes Graphic Pattern",
+      "file_type": "rationale",
+      "source_file": "public/template-card-bg.png",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    }
+  ],
+  "edges": [
+    {
+      "source": "public_template_card_bg_main",
+      "target": "public_template_card_bg_saas_mockup",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "public/template-card-bg.png",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "public_template_card_bg_main",
+      "target": "public_template_card_bg_constellation_graphic",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "public/template-card-bg.png",
+      "source_location": null,
+      "weight": 1.0
+    }
+  ],
+  "hyperedges": [],
+  "input_tokens": 0,
+  "output_tokens": 0
+}

@@ -44,6 +44,7 @@ export type CreateTemplateInput = {
   attachmentSize?: number | null;
   attachmentMimeType?: string | null;
   attachmentUrl?: string | null;
+  variables?: Record<string, string> | null;
 };
 
 export type CreateLeadInput = {
@@ -127,7 +128,7 @@ export async function fetchProfile<T>(userId: string) {
   const supabase = createServerSupabase();
   const { data, error } = await supabase
     .from("users")
-    .select("id,name,email,created_at")
+    .select("id,name,email,created_at,email_template_variables")
     .eq("id", userId)
     .maybeSingle();
 
@@ -147,11 +148,40 @@ export async function updateProfile<T>(userId: string, profile: { name: string; 
       },
       { onConflict: "id" },
     )
-    .select("id,name,email,created_at")
+    .select("id,name,email,created_at,email_template_variables")
     .single();
 
   if (error) throw error;
   return data as T;
+}
+
+export async function fetchGlobalVariables(userId: string): Promise<Record<string, string>> {
+  const supabase = createServerSupabase();
+  const { data, error } = await supabase
+    .from("users")
+    .select("email_template_variables")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (error) throw error;
+  const vars = (data?.email_template_variables as Record<string, string>) || {};
+  return {
+    signature: vars.signature || "",
+    name: vars.name || "",
+  };
+}
+
+export async function updateGlobalVariables(userId: string, variables: Record<string, string>) {
+  const supabase = createServerSupabase();
+  const { error } = await supabase
+    .from("users")
+    .update({
+      email_template_variables: variables,
+    })
+    .eq("id", userId);
+
+  if (error) throw error;
+  return true;
 }
 
 export async function fetchDashboardStats(userId?: string) {
@@ -549,6 +579,7 @@ export async function createTemplate<T>(userId: string, input: CreateTemplateInp
       attachment_size: input.attachmentSize || null,
       attachment_mime_type: input.attachmentMimeType || null,
       attachment_url: input.attachmentUrl || null,
+      variables: input.variables || {},
     })
     .select("*")
     .single();
@@ -569,6 +600,7 @@ export async function updateTemplate<T>(
     attachmentSize?: number | null;
     attachmentMimeType?: string | null;
     attachmentUrl?: string | null;
+    variables?: Record<string, string> | null;
   }
 ) {
   const supabase = createServerSupabase();
@@ -585,6 +617,7 @@ export async function updateTemplate<T>(
       attachment_size: input.attachmentSize ?? null,
       attachment_mime_type: input.attachmentMimeType ?? null,
       attachment_url: input.attachmentUrl ?? null,
+      variables: input.variables ?? {},
     })
     .eq("id", templateId)
     .eq("user_id", userId)
@@ -760,6 +793,7 @@ export async function addGlobalTemplateToLibrary(
       name: globalTemplate.name,
       subject: globalTemplate.subject,
       body_text: globalTemplate.body_text,
+      variables: globalTemplate.variables || {},
     })
     .select("*")
     .single();
@@ -814,6 +848,7 @@ export async function publishTemplateToGlobal<T>(
         category: options?.category ?? "General",
         description: options?.description ?? null,
         is_published: true,
+        variables: template.variables || {},
       },
       { onConflict: "original_template_id" }
     )
