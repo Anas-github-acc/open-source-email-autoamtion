@@ -19,7 +19,7 @@ e it with inbox warmup (warmup means - gradually increasing number of email you 
 
 ## Template Syntax
 
-```json
+```JavaScript
 {
   lead: "Alex Leigh"
   name: "Mohd Anas"
@@ -27,10 +27,7 @@ e it with inbox warmup (warmup means - gradually increasing number of email you 
   signature: "Mohd Anas\nGithub - https://github.com/Anas-github-acc\nLinkedin - https://linkedin.com/in/anas-um"
 }
 ```
-```
-```
 
-```bash
 ```
 Hi {{ lead.split(' ')[0] }},
 
@@ -47,7 +44,7 @@ Best,
 
 ### Result
 
-```bash
+```
 ```
 Hi John,
 
@@ -61,7 +58,6 @@ Best,
 Mohd Anas
 Github - [Github](https://github.com/Anas-github-acc)
 Linkedin - [Linkedin](https://linkedin.com/in/anas-um)
-```
 ```
 
 ### Syntax uses:
@@ -78,23 +74,23 @@ Linkedin - [Linkedin](https://linkedin.com/in/anas-um)
 - Create campaign and schedules email
 - You do not have to worry about when & how email should be send everything will be handle by engine
 - See workflow runs, Disable/Unable to safe your time (which i do not think you need to stop it) 
-<br>
-![dashboard-to-check-and-control](./assests/dashboard-to-check-and-control=github-workflow.png)
+
+![dashboard-to-check-and-control](https://github.com/Anas-github-acc/open-source-email-autoamtion/blob/main/assests/dashboard-to-check-and-control=github-workflow.png)
 
 ### 2. Create highly dynamic Templates or import Globally available Templates to your Library
-<br>
-![dynamic-template-generation-with-global-pre-generated-template-support](./assests/dynamic-template-generation-with-global-pre-generated-template-support.png)
+
+![dynamic-template-generation-with-global-pre-generated-template-support](https://github.com/Anas-github-acc/open-source-email-autoamtion/blob/main/assests/dynamic-template-generation-with-global-pre-generated-template-support.png)
 
 ### 3. Free 200+ Globally Accessable Leads email
-<br>
-![Globally accessable leads](./assests/200plus-leads-avaiable.png)
+
+![Globally accessable leads](https://github.com/Anas-github-acc/open-source-email-autoamtion/blob/main/assests/200plus-leads-avaiable.png)
 
 
 ## Deployment Options
 
 ### Self-Hosted Dashboard
 
-**mail me on** - anas.ahamad955@gmail.com
+**mail me** - anas.ahamad955@gmail.com
 <!-- If you want to run your own server to interface with the `dumpmail-fork` script: -->
 <!---->
 <!-- 1. **Clone the repository**: -->
