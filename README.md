@@ -40,11 +40,9 @@ I am {{ name }} and [["I wanted to connect regarding {{topic}}", "Reaching out a
 Best,
 {{signature}}
 ```
-```
 
-### Result
+### After Parsing:
 
-```
 ```
 Hi John,
 
