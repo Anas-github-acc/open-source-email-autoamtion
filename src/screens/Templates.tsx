@@ -485,22 +485,90 @@ function AttachedFileCard({
 }
 
 function extractVariables(text: string): string[] {
-  const regex = /\{\{([^}]+)\}\}/g;
+  if (!text) return [];
+  const tagRegex = /\{\{([^{}]*)\}\}|\[\[([^\[\]]*)\]\]/g;
   const matches = new Set<string>();
-  let match;
-  while ((match = regex.exec(text)) !== null) {
-    matches.add(match[1].trim());
+  
+  const JS_BUILTINS = new Set([
+    "true", "false", "null", "undefined", "NaN", "Infinity",
+    "Math", "Date", "JSON", "Array", "Object", "String", "Number", "Boolean", "RegExp", "Error",
+    "console", "let", "const", "var", "function", "return", "if", "else", "for", "while", "do",
+    "switch", "case", "default", "break", "continue", "typeof", "instanceof", "in", "new", "this",
+    "class", "extends", "super", "try", "catch", "finally", "throw", "import", "export", "default"
+  ]);
+
+  let tagMatch;
+  while ((tagMatch = tagRegex.exec(text)) !== null) {
+    let code = tagMatch[1] || tagMatch[2] || "";
+    // Strip string literals
+    code = code.replace(/'[^']*'|"[^"]*"|`[^`]*`/g, "");
+    
+    // Match all identifiers
+    const identRegex = /[a-zA-Z_$][a-zA-Z0-9_$]*/g;
+    let identMatch;
+    while ((identMatch = identRegex.exec(code)) !== null) {
+      const name = identMatch[0];
+      const index = identMatch.index;
+      
+      // Check if preceded by a dot
+      const beforeStr = code.substring(0, index).trim();
+      if (beforeStr.endsWith(".")) {
+        continue; // It's a property/method access, e.g. .split
+      }
+      
+      // Check if it is a built-in
+      if (JS_BUILTINS.has(name)) {
+        continue;
+      }
+      
+      matches.add(name);
+    }
   }
   return Array.from(matches);
 }
 
-function compileTemplate(text: string, values: Record<string, string>) {
-  if (!text) return "";
-  return text.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
-    const k = key.trim();
-    if (k in values) return values[k] || match; // Keep placeholder if blank
-    return match;
-  });
+function compileTemplate(template: string, context: Record<string, any> = {}) {
+  let result = template;
+  if (!result) return "";
+  const innerTagRegex = /\{\{([^{}]*)\}\}|\[\[([^\[\]]*)\]\]/;
+
+  function evaluateJS(code: string, ctx: Record<string, any>) {
+      try {
+          const keys = Object.keys(ctx);
+          const values = Object.values(ctx);
+          const fn = new Function(...keys, `return (${code});`);
+          return fn(...values);
+      } catch (error) {
+          console.error(`Error evaluating JS: "${code}"`, error);
+          return '';
+      }
+  }
+
+  while (true) {
+      const match = result.match(innerTagRegex);
+      if (!match) break;
+
+      const fullMatch = match[0];
+      const mustacheContent = match[1];
+      const bracketContent = match[2];
+
+      if (mustacheContent !== undefined) {
+          const evaluatedValue = evaluateJS(mustacheContent.trim(), context);
+          result = result.replace(fullMatch, evaluatedValue !== undefined && evaluatedValue !== null ? String(evaluatedValue) : '');
+      } 
+      else if (bracketContent !== undefined) {
+          const arrayItems = evaluateJS(`[${bracketContent}]`, context);
+          
+          if (Array.isArray(arrayItems) && arrayItems.length > 0) {
+              const randomIndex = Math.floor(Math.random() * arrayItems.length);
+              result = result.replace(fullMatch, arrayItems[randomIndex]);
+          } else {
+              result = result.replace(fullMatch, '');
+          }
+      }
+  }
+
+  return result;
 }
 
 type VarItem = { key: string; value: string };
@@ -1349,15 +1417,7 @@ export default function Templates({
         {/* ── EDIT ── */}
         {view === "edit" && (
           <div className="max-w-3xl mx-auto space-y-6">
-            <div className="relative overflow-hidden rounded-2xl border border-border/50 bg-gradient-to-br from-violet-950 via-indigo-900 to-slate-900 px-6 py-8 shadow-xl">
-              <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_30%_70%,hsl(var(--primary))_0%,transparent_60%)]" />
-              <div className="relative z-10">
-                <h1 className="text-2xl font-bold text-white tracking-tight">Edit template</h1>
-                <p className="mt-1 text-[13px] text-white/70">
-                  Modify template details, update variable defaults, and preview changes in real-time.
-                </p>
-              </div>
-            </div>
+            {/* Header banner removed as requested */}
 
             <div className="rounded-xl border border-border bg-card p-6 shadow-md space-y-5">
               {renderVariablesAccordion(editVariables, setEditVariables, "edit")}
@@ -1392,7 +1452,7 @@ export default function Templates({
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-[12px] font-medium text-muted-foreground">Body text</Label>
-                    <Textarea required className="min-h-[200px] text-[13px] font-sans resize-y" value={editForm.bodyText} onChange={(e) => setEditForm((v) => ({ ...v, bodyText: e.target.value }))} />
+                    <Textarea required className="min-h-[360px] text-[13px] font-sans resize-y" value={editForm.bodyText} onChange={(e) => setEditForm((v) => ({ ...v, bodyText: e.target.value }))} />
                   </div>
                   {renderAttachmentField(editAttachment, setEditAttachment, "edit")}
                   <div className="flex items-center justify-between pt-1 border-t border-border/50">
@@ -1568,7 +1628,7 @@ export default function Templates({
               disabled={managingGlobal}
             >
               {managingGlobal ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-              Unpublish (Delete)
+              Unpublish
             </Button>
             <Button
               onClick={() => templateToManage && void handleUpdateGlobal(templateToManage)}
@@ -1576,7 +1636,7 @@ export default function Templates({
               disabled={managingGlobal}
             >
               {managingGlobal ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Globe className="h-3.5 w-3.5" />}
-              Sync (Update Global)
+              Update
             </Button>
           </div>
         </DialogContent>

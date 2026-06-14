@@ -53,22 +53,90 @@ function AddCountBadge({ count }: { count: number }) {
 
 // ─── Template Preview Modal ───────────────────────────────────────────────────
 function extractVariables(text: string): string[] {
-  const regex = /\{\{([^}]+)\}\}/g;
+  if (!text) return [];
+  const tagRegex = /\{\{([^{}]*)\}\}|\[\[([^\[\]]*)\]\]/g;
   const matches = new Set<string>();
-  let match;
-  while ((match = regex.exec(text)) !== null) {
-    matches.add(match[1].trim());
+  
+  const JS_BUILTINS = new Set([
+    "true", "false", "null", "undefined", "NaN", "Infinity",
+    "Math", "Date", "JSON", "Array", "Object", "String", "Number", "Boolean", "RegExp", "Error",
+    "console", "let", "const", "var", "function", "return", "if", "else", "for", "while", "do",
+    "switch", "case", "default", "break", "continue", "typeof", "instanceof", "in", "new", "this",
+    "class", "extends", "super", "try", "catch", "finally", "throw", "import", "export", "default"
+  ]);
+
+  let tagMatch;
+  while ((tagMatch = tagRegex.exec(text)) !== null) {
+    let code = tagMatch[1] || tagMatch[2] || "";
+    // Strip string literals
+    code = code.replace(/'[^']*'|"[^"]*"|`[^`]*`/g, "");
+    
+    // Match all identifiers
+    const identRegex = /[a-zA-Z_$][a-zA-Z0-9_$]*/g;
+    let identMatch;
+    while ((identMatch = identRegex.exec(code)) !== null) {
+      const name = identMatch[0];
+      const index = identMatch.index;
+      
+      // Check if preceded by a dot
+      const beforeStr = code.substring(0, index).trim();
+      if (beforeStr.endsWith(".")) {
+        continue; // It's a property/method access, e.g. .split
+      }
+      
+      // Check if it is a built-in
+      if (JS_BUILTINS.has(name)) {
+        continue;
+      }
+      
+      matches.add(name);
+    }
   }
   return Array.from(matches);
 }
 
-function compileTemplate(text: string, values: Record<string, string>) {
-  if (!text) return "";
-  return text.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
-    const k = key.trim();
-    if (k in values) return values[k] || match; // Keep placeholder if blank
-    return match;
-  });
+function compileTemplate(template: string, context: Record<string, any> = {}) {
+  let result = template;
+  if (!result) return "";
+  const innerTagRegex = /\{\{([^{}]*)\}\}|\[\[([^\[\]]*)\]\]/;
+
+  function evaluateJS(code: string, ctx: Record<string, any>) {
+      try {
+          const keys = Object.keys(ctx);
+          const values = Object.values(ctx);
+          const fn = new Function(...keys, `return (${code});`);
+          return fn(...values);
+      } catch (error) {
+          console.error(`Error evaluating JS: "${code}"`, error);
+          return '';
+      }
+  }
+
+  while (true) {
+      const match = result.match(innerTagRegex);
+      if (!match) break;
+
+      const fullMatch = match[0];
+      const mustacheContent = match[1];
+      const bracketContent = match[2];
+
+      if (mustacheContent !== undefined) {
+          const evaluatedValue = evaluateJS(mustacheContent.trim(), context);
+          result = result.replace(fullMatch, evaluatedValue !== undefined && evaluatedValue !== null ? String(evaluatedValue) : '');
+      } 
+      else if (bracketContent !== undefined) {
+          const arrayItems = evaluateJS(`[${bracketContent}]`, context);
+          
+          if (Array.isArray(arrayItems) && arrayItems.length > 0) {
+              const randomIndex = Math.floor(Math.random() * arrayItems.length);
+              result = result.replace(fullMatch, arrayItems[randomIndex]);
+          } else {
+              result = result.replace(fullMatch, '');
+          }
+      }
+  }
+
+  return result;
 }
 
 function TemplatePreviewModal({
