@@ -33,7 +33,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   FileText, Loader2, Plus, Edit, Trash2, Paperclip,
   UploadCloud, X, FileCheck2, HardDrive, Library,
-  Globe, Send, Mail, BookMarked,
+  Globe, Send, Mail, BookMarked, ChevronDown, ChevronUp, Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -505,239 +505,31 @@ function compileTemplate(text: string, values: Record<string, string>) {
 
 type VarItem = { key: string; value: string };
 
-function VariablesAndPreviewPanel({
-  variables,
-  setVariables,
-  globalVars,
-  setGlobalVars,
-  subject,
-  bodyText,
-}: {
-  variables: VarItem[];
-  setVariables: React.Dispatch<React.SetStateAction<VarItem[]>>;
-  globalVars: Record<string, string>;
-  setGlobalVars: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-  subject: string;
-  bodyText: string;
-}) {
-  const [activeTab, setActiveTab] = useState<"variables" | "preview">("variables");
-
-  const addVar = () => {
-    setVariables((prev) => [...prev, { key: "new_var", value: "" }]);
-  };
-
-  const updateVar = (idx: number, field: "key" | "value", val: string) => {
-    setVariables((prev) =>
-      prev.map((v, i) => (i === idx ? { ...v, [field]: val } : v))
-    );
-  };
-
-  const deleteVar = (idx: number) => {
-    setVariables((prev) => prev.filter((_, i) => i !== idx));
-  };
-
-  // Preset variables (read-only previews)
+function compileLivePreview(
+  subject: string,
+  bodyText: string,
+  variables: VarItem[],
+  globalVars: Record<string, string>
+) {
   const presetPreviews: Record<string, string> = {
     lead: "Alex Smith",
     company: "Innovate LLC",
     role: "Director of Product",
   };
-
-  // Compile subject and body text for live preview
-  const compile = () => {
-    const customObj = Object.fromEntries(
-      variables.filter((v) => v.key.trim() !== "").map((v) => [v.key.trim(), v.value])
-    );
-    const compileValues = {
-      ...presetPreviews,
-      name: globalVars.name || "[Your Name]",
-      signature: globalVars.signature || "[Your Signature]",
-      ...customObj,
-    };
-    return {
-      sub: compileTemplate(subject, compileValues),
-      body: compileTemplate(bodyText, compileValues),
-    };
-  };
-
-  const { sub: compiledSub, body: compiledBody } = compile();
-
-  return (
-    <div className="rounded-xl border border-border bg-card overflow-hidden shadow-md flex flex-col h-full">
-      {/* Tabs headers */}
-      <div className="flex border-b border-border bg-secondary/20">
-        <button
-          type="button"
-          onClick={() => setActiveTab("variables")}
-          className={cn(
-            "flex-1 py-3 text-center text-[13px] font-semibold transition-all border-b-2",
-            activeTab === "variables"
-              ? "border-primary text-primary bg-background"
-              : "border-transparent text-muted-foreground hover:text-foreground"
-          )}
-        >
-          Variables
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("preview")}
-          className={cn(
-            "flex-1 py-3 text-center text-[13px] font-semibold transition-all border-b-2",
-            activeTab === "preview"
-              ? "border-primary text-primary bg-background"
-              : "border-transparent text-muted-foreground hover:text-foreground"
-          )}
-        >
-          Live Preview
-        </button>
-      </div>
-
-      <div className="p-5 flex-1 overflow-y-auto space-y-5" style={{ maxHeight: "550px" }}>
-        {activeTab === "variables" ? (
-          <div className="space-y-6">
-            {/* Preset variables */}
-            <div className="space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
-                  Preset Variables (Non-editable)
-                </span>
-                <span className="text-[10px] text-muted-foreground/60 italic">Read-only</span>
-              </div>
-              <div className="grid gap-2">
-                {[
-                  { key: "lead", desc: "Lead's name (e.g. Alex Smith)" },
-                  { key: "company", desc: "Company name (e.g. Innovate LLC)" },
-                  { key: "role", desc: "Lead's role (e.g. CTO)" },
-                ].map((item) => (
-                  <div
-                    key={item.key}
-                    className="flex items-center justify-between rounded-lg border border-border/60 bg-secondary/10 px-3 py-2 text-[12px]"
-                  >
-                    <span className="font-mono font-semibold text-primary">{`{{${item.key}}}`}</span>
-                    <span className="text-muted-foreground text-[11px]">{item.desc}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Special variables (Global, non-deletable) */}
-            <div className="space-y-2.5 pt-2 border-t border-border/50">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
-                  Global Variables (All Templates)
-                </span>
-                <span className="text-[10px] text-muted-foreground/60 italic">Non-deletable</span>
-              </div>
-              <div className="grid gap-3">
-                <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-muted-foreground flex items-center justify-between">
-                    <span>Sender Name</span>
-                    <span className="font-mono text-[10px] font-semibold text-primary">{`{{name}}`}</span>
-                  </label>
-                  <Input
-                    placeholder="Your Name"
-                    className="h-8 text-[12px]"
-                    value={globalVars.name || ""}
-                    onChange={(e) => setGlobalVars((prev) => ({ ...prev, name: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-muted-foreground flex items-center justify-between">
-                    <span>Sender Signature</span>
-                    <span className="font-mono text-[10px] font-semibold text-primary">{`{{signature}}`}</span>
-                  </label>
-                  <Textarea
-                    placeholder="Your Signature / Footer"
-                    className="min-h-[60px] text-[12px] font-sans resize-none"
-                    value={globalVars.signature || ""}
-                    onChange={(e) => setGlobalVars((prev) => ({ ...prev, signature: e.target.value }))}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* User defined variables */}
-            <div className="space-y-2.5 pt-2 border-t border-border/50">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
-                  User Defined Variables (This Template)
-                </span>
-                <Button
-                  type="button"
-                  onClick={addVar}
-                  variant="outline"
-                  size="sm"
-                  className="h-7 px-2 text-[11px] gap-1"
-                >
-                  <Plus className="h-3 w-3" /> Add Var
-                </Button>
-              </div>
-
-              {variables.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-border/60 bg-secondary/5 py-4 text-center text-[12px] text-muted-foreground">
-                  No custom variables defined.
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {variables.map((item, idx) => (
-                    <div key={idx} className="flex gap-2 items-center">
-                      <div className="grid grid-cols-2 gap-2 flex-1">
-                        <Input
-                          placeholder="var_name"
-                          className="h-8 text-[12px] font-mono"
-                          value={item.key}
-                          onChange={(e) => updateVar(idx, "key", e.target.value)}
-                        />
-                        <Input
-                          placeholder="Default value"
-                          className="h-8 text-[12px]"
-                          value={item.value}
-                          onChange={(e) => updateVar(idx, "value", e.target.value)}
-                        />
-                      </div>
-                      <Button
-                        type="button"
-                        onClick={() => deleteVar(idx)}
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-muted-foreground hover:text-destructive shrink-0"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {/* Subject */}
-            <div className="rounded-xl border border-border/60 bg-secondary/10 p-3 space-y-1.5">
-              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                <Mail className="h-3 w-3 text-muted-foreground/80" /> Subject line
-              </div>
-              <p className="text-[13px] font-medium text-foreground">
-                {compiledSub || <span className="text-muted-foreground/40 italic">No subject</span>}
-              </p>
-            </div>
-
-            {/* Body */}
-            <div className="rounded-xl border border-border/60 bg-secondary/10 p-3 space-y-1.5">
-              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                <BookMarked className="h-3 w-3 text-muted-foreground/80" /> Email body
-              </div>
-              <div className="min-h-[220px] rounded-lg border border-border/30 bg-background p-4 shadow-inner">
-                <p className="text-[12px] text-foreground/85 leading-relaxed whitespace-pre-wrap font-sans">
-                  {compiledBody || <span className="text-muted-foreground/30 italic">No body content</span>}
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
+  const customObj = Object.fromEntries(
+    variables.filter((v) => v.key.trim() !== "").map((v) => [v.key.trim(), v.value])
   );
+  const compileValues = {
+    ...presetPreviews,
+    ...globalVars,
+    name: globalVars.name || "[Your Name]",
+    signature: globalVars.signature || "[Your Signature]",
+    ...customObj,
+  };
+  return {
+    sub: compileTemplate(subject, compileValues),
+    body: compileTemplate(bodyText, compileValues),
+  };
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -779,11 +571,16 @@ export default function Templates({
   const [editAttachment, setEditAttachment] = useState<AttachmentState>(null);
   const [editVariables, setEditVariables] = useState<{ key: string; value: string }[]>([]);
 
-  // Global variables state (signature, name) stored in users table
+  // Global variables state (signature, name, and custom ones) stored in users table
   const [globalVars, setGlobalVars] = useState<Record<string, string>>({ name: "", signature: "" });
 
-  // Sidebar active tab for variables / preview
-  const [sidebarTab, setSidebarTab] = useState<"variables" | "preview">("variables");
+  // Dialog state for global variables configuration
+  const [globalVarsDialogOpen, setGlobalVarsDialogOpen] = useState(false);
+  const [tempGlobalVars, setTempGlobalVars] = useState<{ key: string; value: string }[]>([]);
+
+  // Local view controls for CREATE and EDIT editors
+  const [varsExpanded, setVarsExpanded] = useState(false);
+  const [activeTab, setActiveTab] = useState<"edit" | "preview">("edit");
 
   // Fetch global variables when user is loaded
   useEffect(() => {
@@ -827,6 +624,162 @@ export default function Templates({
     if (pickerTarget === "create") setCreateAttachment(att);
     else setEditAttachment(att);
     setPickerOpen(false);
+  };
+
+  const renderVariablesAccordion = (
+    variables: { key: string; value: string }[],
+    setVariables: React.Dispatch<React.SetStateAction<{ key: string; value: string }[]>>,
+    target: "create" | "edit"
+  ) => {
+    const handleAddUserVariable = () => {
+      setVariables((prev) => [...prev, { key: "", value: "" }]);
+    };
+
+    const handleUpdateUserVariableKey = (index: number, val: string) => {
+      const cleanKey = val.replace(/[{}]/g, "").trim();
+      setVariables((prev) =>
+        prev.map((item, i) => (i === index ? { ...item, key: cleanKey } : item))
+      );
+    };
+
+    const handleUpdateUserVariableValue = (index: number, val: string) => {
+      setVariables((prev) =>
+        prev.map((item, i) => (i === index ? { ...item, value: val } : item))
+      );
+    };
+
+    const handleRemoveUserVariable = (index: number) => {
+      setVariables((prev) => prev.filter((_, i) => i !== index));
+    };
+
+    return (
+      <div className="border border-border rounded-lg overflow-hidden bg-secondary/5 mb-4">
+        <button
+          type="button"
+          onClick={() => setVarsExpanded(!varsExpanded)}
+          className="w-full flex items-center justify-between px-4 py-3 bg-secondary/10 hover:bg-secondary/20 transition-colors text-[13px] font-medium text-foreground"
+        >
+          <span className="flex items-center gap-2">
+            <Settings className="h-4 w-4 text-muted-foreground" />
+            Variables - define your own
+          </span>
+          {varsExpanded ? (
+            <ChevronUp className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          )}
+        </button>
+
+        {varsExpanded && (
+          <div className="p-4 border-t border-border grid grid-cols-1 md:grid-cols-2 gap-6 bg-card">
+            {/* 1st Column: Preset Variables */}
+            <div className="space-y-3">
+              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Preset Variables (Read-only)</h3>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between p-2 rounded-md bg-secondary/20 border border-border/50 text-[12px]">
+                  <span className="font-mono text-primary font-medium">{"{{lead}}"}</span>
+                  <span className="text-muted-foreground text-[11px]">companies&apos; leads name</span>
+                </div>
+                <div className="flex items-center justify-between p-2 rounded-md bg-secondary/20 border border-border/50 text-[12px]">
+                  <span className="font-mono text-primary font-medium">{"{{company}}"}</span>
+                  <span className="text-muted-foreground text-[11px]">company name</span>
+                </div>
+                <div className="flex items-center justify-between p-2 rounded-md bg-secondary/20 border border-border/50 text-[12px]">
+                  <span className="font-mono text-primary font-medium">{"{{role}}"}</span>
+                  <span className="text-muted-foreground text-[11px]">lead role</span>
+                </div>
+              </div>
+            </div>
+
+            {/* 2nd Column: User-Defined Variables */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">User-Defined Variables</h3>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddUserVariable}
+                  className="h-7 px-2 text-[11px] gap-1"
+                >
+                  <Plus className="h-3 w-3" /> Add Variable
+                </Button>
+              </div>
+
+              {variables.length === 0 ? (
+                <div className="text-[12px] text-muted-foreground py-4 text-center border border-dashed border-border rounded-md">
+                  No custom variables defined.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                  {variables.map((item, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      <div className="grid grid-cols-2 gap-2 flex-1">
+                        <Input
+                          placeholder="Key"
+                          value={item.key}
+                          onChange={(e) => handleUpdateUserVariableKey(index, e.target.value)}
+                          className="h-8 text-[12px] font-mono"
+                        />
+                        <Input
+                          placeholder="Default Value"
+                          value={item.value}
+                          onChange={(e) => handleUpdateUserVariableValue(index, e.target.value)}
+                          className="h-8 text-[12px]"
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleRemoveUserVariable(index)}
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive shrink-0"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+
+  const handleOpenGlobalVars = () => {
+    const arr = Object.entries(globalVars).map(([key, value]) => ({ key, value }));
+    if (!arr.some((x) => x.key === "name")) arr.unshift({ key: "name", value: "" });
+    const signatureIdx = arr.findIndex((x) => x.key === "signature");
+    if (signatureIdx === -1) {
+      arr.push({ key: "signature", value: "" });
+    }
+    setTempGlobalVars(arr);
+    setGlobalVarsDialogOpen(true);
+  };
+
+  const handleSaveGlobalVars = async () => {
+    if (!user) return;
+    setSaving(true);
+    try {
+      const record = Object.fromEntries(
+        tempGlobalVars.filter((v) => v.key.trim() !== "").map((v) => [v.key.trim(), v.value])
+      );
+      await updateGlobalVariables(user.id, record);
+      setGlobalVars(record);
+      setGlobalVarsDialogOpen(false);
+      toast({ title: "Global variables saved!" });
+    } catch (e) {
+      toast({
+        title: "Failed to save global variables",
+        variant: "destructive",
+        description: e instanceof Error ? e.message : undefined,
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   // Load templates
@@ -912,6 +865,8 @@ export default function Templates({
     const varsObj = (t.variables as Record<string, string>) || {};
     const varsArray = Object.entries(varsObj).map(([key, value]) => ({ key, value }));
     setEditVariables(varsArray);
+    setVarsExpanded(false);
+    setActiveTab("edit");
     setView("edit");
   };
 
@@ -1139,9 +1094,14 @@ export default function Templates({
                   Reusable outreach templates for campaign sequences.
                 </p>
               </div>
-              <Button onClick={() => setView("create")} className="h-9 gap-2 text-[13px]">
-                <Plus className="h-3.5 w-3.5" /> Add template
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button onClick={handleOpenGlobalVars} variant="outline" className="h-9 gap-2 text-[13px]">
+                  <Settings className="h-3.5 w-3.5" /> Global Variables
+                </Button>
+                <Button onClick={() => { setView("create"); setVarsExpanded(false); setActiveTab("edit"); }} className="h-9 gap-2 text-[13px]">
+                  <Plus className="h-3.5 w-3.5" /> Add template
+                </Button>
+              </div>
             </div>
 
             {/* Table */}
@@ -1298,7 +1258,7 @@ export default function Templates({
 
         {/* ── CREATE ── */}
         {view === "create" && (
-          <div className="max-w-5xl mx-auto space-y-6">
+          <div className="max-w-3xl mx-auto space-y-6">
             <div className="relative overflow-hidden rounded-2xl border border-border/50 bg-gradient-to-br from-violet-950 via-indigo-900 to-slate-900 px-6 py-8 shadow-xl">
               <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_30%_70%,hsl(var(--primary))_0%,transparent_60%)]" />
               <div className="relative z-10">
@@ -1309,49 +1269,97 @@ export default function Templates({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              <form onSubmit={handleCreate} className="lg:col-span-7 grid gap-5 rounded-xl border border-border bg-card p-6 shadow-md h-fit">
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label className="text-[12px] font-medium text-muted-foreground">Name</Label>
-                    <Input required placeholder="e.g. Cold Outreach Intro" className="h-9 text-[13px]" value={createForm.name} onChange={(e) => setCreateForm((v) => ({ ...v, name: e.target.value }))} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-[12px] font-medium text-muted-foreground">Subject</Label>
-                    <Input required placeholder="e.g. Quick question about your product" className="h-9 text-[13px]" value={createForm.subject} onChange={(e) => setCreateForm((v) => ({ ...v, subject: e.target.value }))} />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-[12px] font-medium text-muted-foreground">Body text</Label>
-                  <Textarea required placeholder="Hi {{lead}}, I noticed your project {{project}}..." className="min-h-[200px] text-[13px] font-sans resize-y" value={createForm.bodyText} onChange={(e) => setCreateForm((v) => ({ ...v, bodyText: e.target.value }))} />
-                </div>
-                {renderAttachmentField(createAttachment, setCreateAttachment, "create")}
-                <div className="flex items-center justify-end gap-3 pt-1 border-t border-border/50">
-                  <Button type="button" variant="ghost" onClick={() => setView("list")} className="h-9 text-[13px]">Cancel</Button>
-                  <Button type="submit" disabled={saving} className="h-9 text-[13px] gap-2">
-                    {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    Add template
-                  </Button>
-                </div>
-              </form>
+            <div className="rounded-xl border border-border bg-card p-6 shadow-md space-y-5">
+              {renderVariablesAccordion(createVariables, setCreateVariables, "create")}
 
-              <div className="lg:col-span-5 h-full">
-                <VariablesAndPreviewPanel
-                  variables={createVariables}
-                  setVariables={setCreateVariables}
-                  globalVars={globalVars}
-                  setGlobalVars={setGlobalVars}
-                  subject={createForm.subject}
-                  bodyText={createForm.bodyText}
-                />
+              <div className="flex border-b border-border">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("edit")}
+                  className={cn(
+                    "px-4 py-2 text-[13px] font-medium border-b-2 -mb-[2px] transition-colors",
+                    activeTab === "edit"
+                      ? "border-primary text-foreground"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  Edit Template
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("preview")}
+                  className={cn(
+                    "px-4 py-2 text-[13px] font-medium border-b-2 -mb-[2px] transition-colors",
+                    activeTab === "preview"
+                      ? "border-primary text-foreground"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  Live Preview
+                </button>
               </div>
+
+              {activeTab === "edit" ? (
+                <form onSubmit={handleCreate} className="grid gap-5">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Label className="text-[12px] font-medium text-muted-foreground">Name</Label>
+                      <Input required placeholder="e.g. Cold Outreach Intro" className="h-9 text-[13px]" value={createForm.name} onChange={(e) => setCreateForm((v) => ({ ...v, name: e.target.value }))} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-[12px] font-medium text-muted-foreground">Subject</Label>
+                      <Input required placeholder="e.g. Quick question about your product" className="h-9 text-[13px]" value={createForm.subject} onChange={(e) => setCreateForm((v) => ({ ...v, subject: e.target.value }))} />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[12px] font-medium text-muted-foreground">Body text</Label>
+                    <Textarea required placeholder="Hi {{lead}}, I noticed your project {{project}}..." className="min-h-[200px] text-[13px] font-sans resize-y" value={createForm.bodyText} onChange={(e) => setCreateForm((v) => ({ ...v, bodyText: e.target.value }))} />
+                  </div>
+                  {renderAttachmentField(createAttachment, setCreateAttachment, "create")}
+                  <div className="flex items-center justify-end gap-3 pt-1 border-t border-border/50">
+                    <Button type="button" variant="ghost" onClick={() => setView("list")} className="h-9 text-[13px]">Cancel</Button>
+                    <Button type="submit" disabled={saving} className="h-9 text-[13px] gap-2">
+                      {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                      Add template
+                    </Button>
+                  </div>
+                </form>
+              ) : (
+                <div className="space-y-4">
+                  {(() => {
+                    const preview = compileLivePreview(createForm.subject, createForm.bodyText, createVariables, globalVars);
+                    return (
+                      <div className="space-y-4 rounded-xl border border-border bg-card p-6 shadow-sm">
+                        <div className="space-y-2 pb-4 border-b border-border/60">
+                          <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+                            <span className="font-semibold text-foreground">Subject:</span>
+                            <span className="text-foreground font-medium">{preview.sub || <span className="italic text-muted-foreground/50">No subject</span>}</span>
+                          </div>
+                          {createAttachment && (
+                            <div className="flex items-center gap-1.5 text-[11px] bg-secondary/40 px-2 py-1 rounded w-fit border border-border/50 text-muted-foreground">
+                              <Paperclip className="h-3 w-3" />
+                              <span>{createAttachment.name}</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-[13px] leading-relaxed whitespace-pre-wrap font-sans text-foreground min-h-[180px]">
+                          {preview.body || <span className="italic text-muted-foreground/50">No body text</span>}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  <div className="flex items-center justify-end gap-3 pt-1 border-t border-border/50">
+                    <Button type="button" variant="ghost" onClick={() => setView("list")} className="h-9 text-[13px]">Cancel</Button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
 
         {/* ── EDIT ── */}
         {view === "edit" && (
-          <div className="max-w-5xl mx-auto space-y-6">
+          <div className="max-w-3xl mx-auto space-y-6">
             <div className="relative overflow-hidden rounded-2xl border border-border/50 bg-gradient-to-br from-violet-950 via-indigo-900 to-slate-900 px-6 py-8 shadow-xl">
               <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_30%_70%,hsl(var(--primary))_0%,transparent_60%)]" />
               <div className="relative z-10">
@@ -1362,47 +1370,100 @@ export default function Templates({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              <form onSubmit={handleUpdate} className="lg:col-span-7 grid gap-5 rounded-xl border border-border bg-card p-6 shadow-md h-fit">
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label className="text-[12px] font-medium text-muted-foreground">Name</Label>
-                    <Input required className="h-9 text-[13px]" value={editForm.name} onChange={(e) => setEditForm((v) => ({ ...v, name: e.target.value }))} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-[12px] font-medium text-muted-foreground">Subject</Label>
-                    <Input required className="h-9 text-[13px]" value={editForm.subject} onChange={(e) => setEditForm((v) => ({ ...v, subject: e.target.value }))} />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-[12px] font-medium text-muted-foreground">Body text</Label>
-                  <Textarea required className="min-h-[200px] text-[13px] font-sans resize-y" value={editForm.bodyText} onChange={(e) => setEditForm((v) => ({ ...v, bodyText: e.target.value }))} />
-                </div>
-                {renderAttachmentField(editAttachment, setEditAttachment, "edit")}
-                <div className="flex items-center justify-between pt-1 border-t border-border/50">
-                  <Button type="button" variant="destructive" onClick={() => { if (editingTemplate) { setTemplateToDelete(editingTemplate); setDeleteDialogOpen(true); } }} className="h-9 text-[13px] gap-2">
-                    <Trash2 className="h-3.5 w-3.5" /> Delete template
-                  </Button>
-                  <div className="flex items-center gap-3">
-                    <Button type="button" variant="ghost" onClick={() => setView("list")} className="h-9 text-[13px]">Cancel</Button>
-                    <Button type="submit" disabled={saving} className="h-9 text-[13px] gap-2">
-                      {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                      Save changes
-                    </Button>
-                  </div>
-                </div>
-              </form>
+            <div className="rounded-xl border border-border bg-card p-6 shadow-md space-y-5">
+              {renderVariablesAccordion(editVariables, setEditVariables, "edit")}
 
-              <div className="lg:col-span-5 h-full">
-                <VariablesAndPreviewPanel
-                  variables={editVariables}
-                  setVariables={setEditVariables}
-                  globalVars={globalVars}
-                  setGlobalVars={setGlobalVars}
-                  subject={editForm.subject}
-                  bodyText={editForm.bodyText}
-                />
+              <div className="flex border-b border-border">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("edit")}
+                  className={cn(
+                    "px-4 py-2 text-[13px] font-medium border-b-2 -mb-[2px] transition-colors",
+                    activeTab === "edit"
+                      ? "border-primary text-foreground"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  Edit Template
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("preview")}
+                  className={cn(
+                    "px-4 py-2 text-[13px] font-medium border-b-2 -mb-[2px] transition-colors",
+                    activeTab === "preview"
+                      ? "border-primary text-foreground"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  Live Preview
+                </button>
               </div>
+
+              {activeTab === "edit" ? (
+                <form onSubmit={handleUpdate} className="grid gap-5">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Label className="text-[12px] font-medium text-muted-foreground">Name</Label>
+                      <Input required className="h-9 text-[13px]" value={editForm.name} onChange={(e) => setEditForm((v) => ({ ...v, name: e.target.value }))} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-[12px] font-medium text-muted-foreground">Subject</Label>
+                      <Input required className="h-9 text-[13px]" value={editForm.subject} onChange={(e) => setEditForm((v) => ({ ...v, subject: e.target.value }))} />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[12px] font-medium text-muted-foreground">Body text</Label>
+                    <Textarea required className="min-h-[200px] text-[13px] font-sans resize-y" value={editForm.bodyText} onChange={(e) => setEditForm((v) => ({ ...v, bodyText: e.target.value }))} />
+                  </div>
+                  {renderAttachmentField(editAttachment, setEditAttachment, "edit")}
+                  <div className="flex items-center justify-between pt-1 border-t border-border/50">
+                    <Button type="button" variant="destructive" onClick={() => { if (editingTemplate) { setTemplateToDelete(editingTemplate); setDeleteDialogOpen(true); } }} className="h-9 text-[13px] gap-2">
+                      <Trash2 className="h-3.5 w-3.5" /> Delete template
+                    </Button>
+                    <div className="flex items-center gap-3">
+                      <Button type="button" variant="ghost" onClick={() => setView("list")} className="h-9 text-[13px]">Cancel</Button>
+                      <Button type="submit" disabled={saving} className="h-9 text-[13px] gap-2">
+                        {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                        Save changes
+                      </Button>
+                    </div>
+                  </div>
+                </form>
+              ) : (
+                <div className="space-y-4">
+                  {(() => {
+                    const preview = compileLivePreview(editForm.subject, editForm.bodyText, editVariables, globalVars);
+                    return (
+                      <div className="space-y-4 rounded-xl border border-border bg-card p-6 shadow-sm">
+                        <div className="space-y-2 pb-4 border-b border-border/60">
+                          <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+                            <span className="font-semibold text-foreground">Subject:</span>
+                            <span className="text-foreground font-medium">{preview.sub || <span className="italic text-muted-foreground/50">No subject</span>}</span>
+                          </div>
+                          {editAttachment && (
+                            <div className="flex items-center gap-1.5 text-[11px] bg-secondary/40 px-2 py-1 rounded w-fit border border-border/50 text-muted-foreground">
+                              <Paperclip className="h-3 w-3" />
+                              <span>{editAttachment.name}</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-[13px] leading-relaxed whitespace-pre-wrap font-sans text-foreground min-h-[180px]">
+                          {preview.body || <span className="italic text-muted-foreground/50">No body text</span>}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  <div className="flex items-center justify-between pt-1 border-t border-border/50">
+                    <Button type="button" variant="destructive" onClick={() => { if (editingTemplate) { setTemplateToDelete(editingTemplate); setDeleteDialogOpen(true); } }} className="h-9 text-[13px] gap-2">
+                      <Trash2 className="h-3.5 w-3.5" /> Delete template
+                    </Button>
+                    <div className="flex items-center gap-3">
+                      <Button type="button" variant="ghost" onClick={() => setView("list")} className="h-9 text-[13px]">Cancel</Button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1538,6 +1599,141 @@ export default function Templates({
             >
               {managingGlobal ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Globe className="h-3.5 w-3.5" />}
               Sync (Update Global)
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Global Variables Dialog */}
+      <Dialog open={globalVarsDialogOpen} onOpenChange={setGlobalVarsDialogOpen}>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col p-0 overflow-hidden">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
+            <DialogTitle className="flex items-center gap-2">
+              <Settings className="h-4 w-4 text-primary" />
+              Global Variables
+            </DialogTitle>
+            <DialogDescription>
+              Variables configured here are shared across all templates.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+            <div className="space-y-4">
+              <h3 className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Global Variables</h3>
+              
+              <div className="space-y-4">
+                {tempGlobalVars.map((item, index) => {
+                  if (item.key === "name") {
+                    return (
+                      <div key={index} className="space-y-1.5">
+                        <Label className="text-[12px] font-medium text-muted-foreground flex items-center justify-between">
+                          <span>name (Your name)</span>
+                          <span className="font-mono text-[10px] text-primary">{"{{name}}"}</span>
+                        </Label>
+                        <Input
+                          placeholder="e.g. John Doe"
+                          value={item.value}
+                          onChange={(e) =>
+                            setTempGlobalVars((prev) =>
+                              prev.map((v, i) => (i === index ? { ...v, value: e.target.value } : v))
+                            )
+                          }
+                          className="h-9 text-[13px]"
+                        />
+                      </div>
+                    );
+                  }
+
+                  if (item.key === "signature") {
+                    return (
+                      <div key={index} className="space-y-1.5">
+                        <Label className="text-[12px] font-medium text-muted-foreground flex items-center justify-between">
+                          <span>signature (Your signature)</span>
+                          <span className="font-mono text-[10px] text-primary">{"{{signature}}"}</span>
+                        </Label>
+                        <Textarea
+                          placeholder="e.g. Best regards,\nJohn"
+                          value={item.value}
+                          onChange={(e) =>
+                            setTempGlobalVars((prev) =>
+                              prev.map((v, i) => (i === index ? { ...v, value: e.target.value } : v))
+                            )
+                          }
+                          className="min-h-[80px] text-[13px] font-sans"
+                        />
+                      </div>
+                    );
+                  }
+
+                  // Custom global variables
+                  return (
+                    <div key={index} className="flex items-start gap-2 pt-3 border-t border-border/60">
+                      <div className="grid grid-cols-2 gap-2 flex-1">
+                        <div className="space-y-1">
+                          <Label className="text-[11px] text-muted-foreground">Variable Key</Label>
+                          <Input
+                            placeholder="e.g. company_phone"
+                            value={item.key}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/[^a-zA-Z0-9_]/g, ""); // alphanumeric and underscores only
+                              setTempGlobalVars((prev) =>
+                                prev.map((v, i) => (i === index ? { ...v, key: val } : v))
+                              );
+                            }}
+                            className="h-9 text-[12px] font-mono"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[11px] text-muted-foreground">Value</Label>
+                          <Input
+                            placeholder="Value"
+                            value={item.value}
+                            onChange={(e) => {
+                              setTempGlobalVars((prev) =>
+                                prev.map((v, i) => (i === index ? { ...v, value: e.target.value } : v))
+                              );
+                            }}
+                            className="h-9 text-[12px]"
+                          />
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          setTempGlobalVars((prev) => prev.filter((_, i) => i !== index));
+                        }}
+                        className="h-9 w-9 text-muted-foreground hover:text-destructive shrink-0 mt-5"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setTempGlobalVars((prev) => [...prev, { key: "", value: "" }])}
+                  className="h-8 text-[12px] gap-1.5 w-full border-dashed"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add Custom Global Variable
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="px-6 py-4 border-t border-border shrink-0 flex justify-end gap-3 bg-secondary/10">
+            <Button variant="ghost" size="sm" onClick={() => setGlobalVarsDialogOpen(false)} className="text-[13px] h-9">
+              Cancel
+            </Button>
+            <Button size="sm" onClick={handleSaveGlobalVars} disabled={saving} className="text-[13px] h-9 gap-2">
+              {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Save Variables
             </Button>
           </div>
         </DialogContent>

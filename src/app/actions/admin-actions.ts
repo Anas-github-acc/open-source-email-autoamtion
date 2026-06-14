@@ -166,10 +166,12 @@ export async function fetchGlobalVariables(userId: string): Promise<Record<strin
   if (error) throw error;
   const vars = (data?.email_template_variables as Record<string, string>) || {};
   return {
-    signature: vars.signature || "",
-    name: vars.name || "",
+    signature: "",
+    name: "",
+    ...vars,
   };
 }
+
 
 export async function updateGlobalVariables(userId: string, variables: Record<string, string>) {
   const supabase = createServerSupabase();
