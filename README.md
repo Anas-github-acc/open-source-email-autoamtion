@@ -1,4 +1,4 @@
-# Free Email Automation Service - Dumpmail
+# Open Source Email Automation 
 
 QUICK START by visiting - [Dumpmail](https://dumpmail.vercel.app)
 
